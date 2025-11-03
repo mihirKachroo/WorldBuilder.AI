@@ -12,6 +12,8 @@ import ReactFlow, {
   addEdge,
   Connection,
   MarkerType,
+  Handle,
+  Position,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
 
@@ -29,10 +31,26 @@ interface CharacterNodeData {
 const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
   return (
     <div
-      className={`rounded-lg p-3 shadow-sm w-48 ${data.bgColor} ${data.borderColor} ${
+      className={`rounded-lg p-3 shadow-sm w-48 relative ${data.bgColor} ${data.borderColor} ${
         data.isFocused ? 'border-2 shadow-md' : 'border'
       }`}
     >
+      {/* Source Handle - Right side for outgoing connections */}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white"
+        style={{ top: '50%', transform: 'translateY(-50%)' }}
+      />
+      
+      {/* Target Handle - Left side for incoming connections */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white"
+        style={{ top: '50%', transform: 'translateY(-50%)' }}
+      />
+
       <div className="flex items-start justify-between mb-2">
         <div className="flex items-center space-x-2">
           <svg className={`w-5 h-5 ${data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,7 +275,29 @@ export default function DashboardPage() {
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
 
   const onConnect = useCallback(
-    (params: Connection) => setEdges((eds) => addEdge(params, eds)),
+    (params: Connection) => {
+      // Only create edge if source and target are valid
+      if (!params.source || !params.target) {
+        return
+      }
+      const newEdge: Edge = {
+        id: `${params.source}-${params.target}-${Date.now()}`,
+        source: params.source,
+        target: params.target,
+        sourceHandle: params.sourceHandle ?? null,
+        targetHandle: params.targetHandle ?? null,
+        type: 'smoothstep',
+        label: 'connected to',
+        style: { stroke: '#5B21B6', strokeWidth: 2 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: '#5B21B6',
+        },
+        labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
+        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+      }
+      setEdges((eds) => addEdge(newEdge, eds))
+    },
     [setEdges]
   )
 
@@ -606,6 +646,7 @@ export default function DashboardPage() {
               nodeTypes={nodeTypes}
               fitView
               className="bg-gray-light"
+              connectionLineStyle={{ stroke: '#5B21B6', strokeWidth: 2 }}
               style={{
                 background: 'radial-gradient(circle, #e5e5e5 1px, transparent 1px)',
                 backgroundSize: '20px 20px',
