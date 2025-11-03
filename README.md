@@ -52,7 +52,7 @@ pip install -r requirements.txt
 python app.py
 ```
 
-The backend will run on [http://localhost:5000](http://localhost:5000)
+The backend will run on [http://127.0.0.1:5000](http://127.0.0.1:5000)
 
 ## Project Structure
 

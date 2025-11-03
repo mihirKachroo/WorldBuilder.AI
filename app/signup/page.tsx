@@ -28,7 +28,7 @@ export default function SignupPage() {
 
     try {
       // TODO: Replace with actual API call
-      const response = await fetch('http://localhost:5000/api/auth/signup', {
+      const response = await fetch('http://127.0.0.1:5000/api/auth/signup', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -58,7 +58,11 @@ export default function SignupPage() {
         {/* Logo */}
         <div className="flex items-center justify-center mb-8">
           <svg className="w-8 h-8 text-primary mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2L3 21h18L12 2z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 21V2" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 8l3 3 3-3" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 14l3 3 3-3" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 21l-1.5-1.5h3L12 21z" />
           </svg>
           <span className="text-2xl font-semibold text-gray-dark">
             WorldBuilder<span className="text-primary">.ai</span>
