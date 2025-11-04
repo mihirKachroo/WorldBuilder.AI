@@ -187,9 +187,9 @@ export default function DashboardPage() {
   const initialEdges: Edge[] = [
     {
       id: 'arion-eldor',
-      source: 'king-arion',
-      target: 'king-eldor',
-      label: 'father of',
+      source: 'king-eldor',
+      target: 'king-arion',
+      label: 'son of',
       type: 'smoothstep',
       style: { stroke: '#3B82F6', strokeWidth: 2 },
       markerEnd: {
@@ -201,7 +201,7 @@ export default function DashboardPage() {
     },
     {
       id: 'arion-selara',
-      source: 'king-arion',
+      source: 'king-eldor',
       target: 'queen-selara',
       label: 'husband of',
       type: 'smoothstep',
@@ -217,7 +217,7 @@ export default function DashboardPage() {
       id: 'eldor-kael',
       source: 'king-eldor',
       target: 'prince-kael',
-      label: 'son of',
+      label: 'father of',
       type: 'smoothstep',
       style: { stroke: '#3B82F6', strokeWidth: 2 },
       markerEnd: {
@@ -257,8 +257,8 @@ export default function DashboardPage() {
     },
     {
       id: 'mira-eldor',
-      source: 'mira-valen',
-      target: 'king-eldor',
+      source: 'king-eldor',
+      target: 'mira-valen',
       label: 'advised by',
       type: 'smoothstep',
       style: { stroke: '#5B21B6', strokeWidth: 2 },
@@ -671,7 +671,7 @@ export default function DashboardPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
-              <span>+ New Node</span>
+              <span>New Node</span>
             </button>
           </div>
         </main>
