@@ -77,8 +77,10 @@ export default function DashboardPage() {
     'world-lore': true,
     'geography': false,
     'factions': false,
+    'entities': true,
   })
   const [selectedConversation, setSelectedConversation] = useState('king-of-eldoria')
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('king-eldor')
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
@@ -273,6 +275,10 @@ export default function DashboardPage() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<CharacterNodeData>) => {
+    setSelectedNodeId(node.id)
+  }, [])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -547,15 +553,41 @@ export default function DashboardPage() {
             </div>
             
             <div className="space-y-1">
-              <button className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark">
+              <button 
+                onClick={() => toggleSection('entities')}
+                className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
+              >
                 <div className="flex items-center space-x-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                   <span>Characters</span>
                 </div>
-                <span className="text-xs text-gray">12</span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs text-gray">{nodes.length}</span>
+                  <svg className={`w-4 h-4 transition-transform ${expandedSections['entities'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
               </button>
+              {expandedSections['entities'] && (
+                <div className="ml-6 mt-1 space-y-1">
+                  {nodes.map((node) => (
+                    <button
+                      key={node.id}
+                      onClick={() => setSelectedNodeId(node.id)}
+                      className={`w-full flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-light transition-colors ${
+                        selectedNodeId === node.id ? 'bg-gray-light text-gray-dark font-medium' : 'text-gray'
+                      }`}
+                    >
+                      <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span>{node.data.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <button className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark">
                 <div className="flex items-center space-x-2">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -638,11 +670,18 @@ export default function DashboardPage() {
           {/* Graph Canvas */}
           <div className="flex-1 relative bg-gray-light">
             <ReactFlow
-              nodes={nodes}
+              nodes={nodes.map(node => ({
+                ...node,
+                data: {
+                  ...node.data,
+                  isFocused: node.id === selectedNodeId,
+                }
+              }))}
               edges={edges}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onNodeClick={onNodeClick}
               nodeTypes={nodeTypes}
               fitView
               className="bg-gray-light"
@@ -676,44 +715,139 @@ export default function DashboardPage() {
           </div>
         </main>
 
-        {/* Right Sidebar - AI Assistant */}
+        {/* Right Sidebar - Node Details or AI Assistant */}
         <aside className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-          {/* Conversation Tabs */}
-          <div className="border-b border-gray-200 p-2 flex items-center space-x-1 overflow-x-auto">
-            <button
-              onClick={() => setSelectedConversation('king-of-eldoria')}
-              className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                selectedConversation === 'king-of-eldoria'
-                  ? 'bg-gray-light text-gray-dark'
-                  : 'text-gray hover:bg-gray-light'
-              }`}
-            >
-              King of Eldoria recap
-            </button>
-            <button
-              onClick={() => setSelectedConversation('magic-fundamentals')}
-              className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                selectedConversation === 'magic-fundamentals'
-                  ? 'bg-gray-light text-gray-dark'
-                  : 'text-gray hover:bg-gray-light'
-              }`}
-            >
-              Magic fundamentals
-            </button>
-            <button className="p-1.5 hover:bg-gray-light rounded">
-              <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
-            <button className="p-1.5 hover:bg-gray-light rounded">
-              <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+          {selectedNodeId ? (() => {
+            const selectedNode = nodes.find(n => n.id === selectedNodeId)
+            if (!selectedNode) return null
+            
+            // Find connected nodes
+            const connectedNodes = edges
+              .filter(e => e.source === selectedNodeId || e.target === selectedNodeId)
+              .map(e => {
+                const connectedId = e.source === selectedNodeId ? e.target : e.source
+                return nodes.find(n => n.id === connectedId)
+              })
+              .filter(Boolean) as Node<CharacterNodeData>[]
+            
+            return (
+              <>
+                {/* Node Header */}
+                <div className="border-b border-gray-200 p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="font-semibold text-gray-dark">Entity Details</h3>
+                    <button 
+                      onClick={() => setSelectedNodeId(null)}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  {/* Node Preview */}
+                  <div className={`rounded-lg p-3 ${selectedNode.data.bgColor} ${selectedNode.data.borderColor} border`}>
+                    <div className="flex items-center space-x-2 mb-2">
+                      <svg className={`w-5 h-5 ${selectedNode.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <h4 className="font-semibold text-gray-dark">{selectedNode.data.name}</h4>
+                    </div>
+                    <p className="text-xs text-gray">{selectedNode.data.description}</p>
+                  </div>
+                </div>
 
-          {/* AI Content */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                {/* Node Content */}
+                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                  {/* Description */}
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-dark mb-2">Description</h4>
+                    <p className="text-sm text-gray leading-relaxed">{selectedNode.data.description}</p>
+                  </div>
+
+                  {/* Connections */}
+                  {connectedNodes.length > 0 && (
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-dark mb-2">Connections</h4>
+                      <div className="space-y-2">
+                        {connectedNodes.map((node) => {
+                          const edge = edges.find(e => 
+                            (e.source === selectedNodeId && e.target === node.id) ||
+                            (e.source === node.id && e.target === selectedNodeId)
+                          )
+                          return (
+                            <button
+                              key={node.id}
+                              onClick={() => setSelectedNodeId(node.id)}
+                              className="w-full text-left p-2 rounded-lg border border-gray-200 hover:bg-gray-light transition-colors"
+                            >
+                              <div className="flex items-center space-x-2 mb-1">
+                                <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                <span className="text-sm font-medium text-gray-dark">{node.data.name}</span>
+                              </div>
+                              {edge?.label && (
+                                <span className="text-xs text-gray">{edge.label}</span>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  <div className="pt-4 border-t border-gray-200 space-y-2">
+                    <button className="w-full px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
+                      Edit Entity
+                    </button>
+                    <button className="w-full px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors">
+                      View Full Document
+                    </button>
+                  </div>
+                </div>
+              </>
+            )
+          })() : (
+            <>
+              {/* Conversation Tabs */}
+              <div className="border-b border-gray-200 p-2 flex items-center space-x-1 overflow-x-auto">
+                <button
+                  onClick={() => setSelectedConversation('king-of-eldoria')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
+                    selectedConversation === 'king-of-eldoria'
+                      ? 'bg-gray-light text-gray-dark'
+                      : 'text-gray hover:bg-gray-light'
+                  }`}
+                >
+                  King of Eldoria recap
+                </button>
+                <button
+                  onClick={() => setSelectedConversation('magic-fundamentals')}
+                  className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
+                    selectedConversation === 'magic-fundamentals'
+                      ? 'bg-gray-light text-gray-dark'
+                      : 'text-gray hover:bg-gray-light'
+                  }`}
+                >
+                  Magic fundamentals
+                </button>
+                <button className="p-1.5 hover:bg-gray-light rounded">
+                  <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                </button>
+                <button className="p-1.5 hover:bg-gray-light rounded">
+                  <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              {/* AI Content */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-4">
             {/* Query */}
             <div>
               <div className="font-medium text-gray-dark mb-2">Who is the king of Eldoria?</div>
@@ -827,22 +961,24 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Bottom Input */}
-          <div className="border-t border-gray-200 p-4">
-            <div className="relative">
-              <textarea
-                placeholder="Ask about lore, or create new lore connections."
-                className="w-full bg-gray-light border border-gray-200 rounded-lg px-4 py-3 pr-10 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-                rows={2}
-              />
-              <button className="absolute bottom-3 right-3 p-1 text-primary hover:text-primary-dark">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
-            </div>
-            <div className="mt-2 text-xs text-gray">Add Context</div>
-          </div>
+              {/* Bottom Input */}
+              <div className="border-t border-gray-200 p-4">
+                <div className="relative">
+                  <textarea
+                    placeholder="Ask about lore, or create new lore connections."
+                    className="w-full bg-gray-light border border-gray-200 rounded-lg px-4 py-3 pr-10 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    rows={2}
+                  />
+                  <button className="absolute bottom-3 right-3 p-1 text-primary hover:text-primary-dark">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-gray">Add Context</div>
+              </div>
+            </>
+          )}
         </aside>
       </div>
     </div>
