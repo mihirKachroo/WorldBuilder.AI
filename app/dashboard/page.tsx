@@ -62,7 +62,7 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
         </svg>
       </div>
-      <p className="text-xs text-gray">{data.description}</p>
+      <p className="text-xs text-gray line-clamp-2 overflow-hidden">{data.description}</p>
     </div>
   )
 }
@@ -81,6 +81,11 @@ export default function DashboardPage() {
   })
   const [selectedConversation, setSelectedConversation] = useState('king-of-eldoria')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>('king-eldor')
+  const [isEditingDescription, setIsEditingDescription] = useState(false)
+  const [editedDescription, setEditedDescription] = useState('')
+  const [showNewNodeModal, setShowNewNodeModal] = useState(false)
+  const [newNodeName, setNewNodeName] = useState('')
+  const [newNodeDescription, setNewNodeDescription] = useState('')
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
@@ -278,7 +283,46 @@ export default function DashboardPage() {
 
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<CharacterNodeData>) => {
     setSelectedNodeId(node.id)
+    setIsEditingDescription(false)
   }, [])
+
+  const handleAddNode = useCallback(() => {
+    if (!newNodeName.trim()) return
+    
+    const newNode: Node<CharacterNodeData> = {
+      id: `node-${Date.now()}`,
+      type: 'character',
+      position: { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 },
+      data: {
+        name: newNodeName.trim(),
+        description: newNodeDescription.trim() || 'No description provided.',
+        bgColor: 'bg-blue-100',
+        borderColor: 'border-blue-200',
+        textColor: 'text-gray-dark',
+        iconColor: 'text-blue-600',
+      },
+    }
+    
+    setNodes((nds) => [...nds, newNode])
+    setSelectedNodeId(newNode.id)
+    setNewNodeName('')
+    setNewNodeDescription('')
+    setShowNewNodeModal(false)
+  }, [newNodeName, newNodeDescription, setNodes])
+
+  const handleDeleteNode = useCallback((nodeId: string) => {
+    // Remove the node
+    setNodes((nds) => nds.filter((node) => node.id !== nodeId))
+    
+    // Remove all edges connected to this node
+    setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
+    
+    // Clear selection if this node was selected
+    if (selectedNodeId === nodeId) {
+      setSelectedNodeId(null)
+      setIsEditingDescription(false)
+    }
+  }, [setNodes, setEdges, selectedNodeId])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -545,7 +589,11 @@ export default function DashboardPage() {
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-semibold text-gray-dark">Entities</h3>
-              <button className="p-1 hover:bg-gray-light rounded text-primary">
+              <button 
+                onClick={() => setShowNewNodeModal(true)}
+                className="p-1 hover:bg-gray-light rounded text-primary"
+                title="Add new entity"
+              >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
@@ -573,18 +621,41 @@ export default function DashboardPage() {
               {expandedSections['entities'] && (
                 <div className="ml-6 mt-1 space-y-1">
                   {nodes.map((node) => (
-                    <button
+                    <div
                       key={node.id}
-                      onClick={() => setSelectedNodeId(node.id)}
-                      className={`w-full flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-light transition-colors ${
-                        selectedNodeId === node.id ? 'bg-gray-light text-gray-dark font-medium' : 'text-gray'
+                      className={`flex items-center group ${
+                        selectedNodeId === node.id ? 'bg-gray-light' : ''
                       }`}
                     >
-                      <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      <span>{node.data.name}</span>
-                    </button>
+                      <button
+                        onClick={() => {
+                          setSelectedNodeId(node.id)
+                          setIsEditingDescription(false)
+                        }}
+                        className={`flex-1 flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-light transition-colors ${
+                          selectedNodeId === node.id ? 'text-gray-dark font-medium' : 'text-gray'
+                        }`}
+                      >
+                        <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                        </svg>
+                        <span>{node.data.name}</span>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (confirm(`Are you sure you want to delete "${node.data.name}"? This will also remove all connections to this entity.`)) {
+                            handleDeleteNode(node.id)
+                          }
+                        }}
+                        className="p-1 mr-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity"
+                        title="Delete entity"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -706,12 +777,92 @@ export default function DashboardPage() {
             </ReactFlow>
             
             {/* New Node Button */}
-            <button className="absolute top-4 left-4 z-10 bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light transition-colors flex items-center space-x-2 shadow-sm">
+            <button 
+              onClick={() => setShowNewNodeModal(true)}
+              className="absolute top-4 left-4 z-10 bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light transition-colors flex items-center space-x-2 shadow-sm"
+            >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
               <span>New Node</span>
             </button>
+
+            {/* New Node Modal */}
+            {showNewNodeModal && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-dark">Create New Entity</h3>
+                    <button
+                      onClick={() => {
+                        setShowNewNodeModal(false)
+                        setNewNodeName('')
+                        setNewNodeDescription('')
+                      }}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-dark mb-2">
+                        Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={newNodeName}
+                        onChange={(e) => setNewNodeName(e.target.value)}
+                        placeholder="Enter entity name..."
+                        className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && newNodeName.trim()) {
+                            handleAddNode()
+                          }
+                        }}
+                        autoFocus
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-dark mb-2">
+                        Description
+                      </label>
+                      <textarea
+                        value={newNodeDescription}
+                        onChange={(e) => setNewNodeDescription(e.target.value)}
+                        placeholder="Enter description (optional)..."
+                        className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        rows={3}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 pt-2">
+                      <button
+                        onClick={handleAddNode}
+                        disabled={!newNodeName.trim()}
+                        className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Create Entity
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowNewNodeModal(false)
+                          setNewNodeName('')
+                          setNewNodeDescription('')
+                        }}
+                        className="px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </main>
 
@@ -737,7 +888,10 @@ export default function DashboardPage() {
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="font-semibold text-gray-dark">Entity Details</h3>
                     <button 
-                      onClick={() => setSelectedNodeId(null)}
+                      onClick={() => {
+                        setSelectedNodeId(null)
+                        setIsEditingDescription(false)
+                      }}
                       className="p-1 hover:bg-gray-light rounded"
                     >
                       <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -762,8 +916,55 @@ export default function DashboardPage() {
                 <div className="flex-1 overflow-y-auto p-4 space-y-4">
                   {/* Description */}
                   <div>
-                    <h4 className="text-sm font-semibold text-gray-dark mb-2">Description</h4>
-                    <p className="text-sm text-gray leading-relaxed">{selectedNode.data.description}</p>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-sm font-semibold text-gray-dark">Description</h4>
+                    </div>
+                    {isEditingDescription ? (
+                      <div className="space-y-2">
+                        <textarea
+                          value={editedDescription}
+                          onChange={(e) => setEditedDescription(e.target.value)}
+                          className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                          rows={4}
+                          placeholder="Enter description..."
+                        />
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => {
+                              // Update the node's description
+                              setNodes((nds) =>
+                                nds.map((node) =>
+                                  node.id === selectedNodeId
+                                    ? {
+                                        ...node,
+                                        data: {
+                                          ...node.data,
+                                          description: editedDescription,
+                                        },
+                                      }
+                                    : node
+                                )
+                              )
+                              setIsEditingDescription(false)
+                            }}
+                            className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditedDescription(selectedNode.data.description)
+                              setIsEditingDescription(false)
+                            }}
+                            className="px-3 py-1.5 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray leading-relaxed">{selectedNode.data.description}</p>
+                    )}
                   </div>
 
                   {/* Connections */}
@@ -779,7 +980,10 @@ export default function DashboardPage() {
                           return (
                             <button
                               key={node.id}
-                              onClick={() => setSelectedNodeId(node.id)}
+                              onClick={() => {
+                                setSelectedNodeId(node.id)
+                                setIsEditingDescription(false)
+                              }}
                               className="w-full text-left p-2 rounded-lg border border-gray-200 hover:bg-gray-light transition-colors"
                             >
                               <div className="flex items-center space-x-2 mb-1">
@@ -800,9 +1004,29 @@ export default function DashboardPage() {
 
                   {/* Actions */}
                   <div className="pt-4 border-t border-gray-200 space-y-2">
-                    <button className="w-full px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors">
-                      Edit Entity
-                    </button>
+                    {!isEditingDescription ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditedDescription(selectedNode.data.description)
+                            setIsEditingDescription(true)
+                          }}
+                          className="w-full px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
+                        >
+                          Edit Entity
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (confirm(`Are you sure you want to delete "${selectedNode.data.name}"? This will also remove all connections to this entity.`)) {
+                              handleDeleteNode(selectedNodeId!)
+                            }
+                          }}
+                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
+                        >
+                          Delete Entity
+                        </button>
+                      </>
+                    ) : null}
                     <button className="w-full px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors">
                       View Full Document
                     </button>
