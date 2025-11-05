@@ -16,7 +16,7 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20l-1.5-1.5h3L12 20z" />
               </svg>
               <span className="text-xl font-semibold text-gray-dark">
-                WorldBuilder<span className="text-primary">.ai</span>
+                WorldBuilder<span className="text-primary"></span>
               </span>
             </div>
             <div className="flex items-center space-x-4">
@@ -41,7 +41,7 @@ export default function Home() {
             Build Your Story Universe
           </h1>
           <p className="text-xl text-gray mb-8 max-w-2xl mx-auto">
-            Create, organize, and manage your world lore, characters, and story elements with AI-powered assistance.
+            Create, organize, and manage your world lore, characters, and story elements with intelligent assistance.
           </p>
           <div className="flex justify-center space-x-4">
             <Link 
@@ -79,7 +79,7 @@ export default function Home() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                 </svg>
               </div>
-              <h3 className="text-xl font-semibold text-gray-dark mb-2">AI-Powered Assistance</h3>
+              <h3 className="text-xl font-semibold text-gray-dark mb-2">Intelligent Assistance</h3>
               <p className="text-gray">
                 Get intelligent suggestions and connections to help build your world consistently.
               </p>
@@ -112,11 +112,11 @@ export default function Home() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20l-1.5-1.5h3L12 20z" />
               </svg>
               <span className="text-lg font-semibold text-gray-dark">
-                WorldBuilder<span className="text-primary">.ai</span>
+                WorldBuilder<span className="text-primary"></span>
               </span>
             </div>
             <p className="text-gray text-sm">
-              © 2024 WorldBuilder.AI. All rights reserved.
+              © 2025 WorldBuilder. All rights reserved.
             </p>
           </div>
         </div>

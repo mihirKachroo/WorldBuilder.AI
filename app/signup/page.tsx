@@ -65,7 +65,7 @@ export default function SignupPage() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 20l-1.5-1.5h3L12 20z" />
           </svg>
           <span className="text-2xl font-semibold text-gray-dark">
-            WorldBuilder<span className="text-primary">.ai</span>
+            WorldBuilder<span className="text-primary"></span>
           </span>
         </div>
 

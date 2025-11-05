@@ -1,4 +1,4 @@
-# WorldBuilder.AI
+# WorldBuilder
 
 A web application for building and managing world lore, characters, and story elements with AI-powered assistance.
 
@@ -57,7 +57,7 @@ The backend will run on [http://127.0.0.1:5000](http://127.0.0.1:5000)
 ## Project Structure
 
 ```
-WorldBuilder.AI/
+WorldBuilder/
 ├── app/                 # Next.js app directory
 │   ├── page.tsx        # Home/landing page
 │   ├── login/          # Login page
@@ -74,7 +74,7 @@ WorldBuilder.AI/
 
 - **Home Page**: Landing page with feature highlights
 - **Authentication**: Login and signup pages
-- **Clean UI**: Modern design matching the WorldBuilder.AI aesthetic
+- **Clean UI**: Modern design matching the WorldBuilder aesthetic
 
 ## Color Scheme
 
