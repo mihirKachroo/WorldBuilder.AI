@@ -94,6 +94,95 @@ export default function DashboardPage() {
     }))
   }
 
+  // Function to render description with clickable character names
+  const renderDescriptionWithLinks = (description: string) => {
+    if (!description) return null
+
+    // Get all character names, sorted by length (longest first) to match full names before partial matches
+    const characterNames = nodes
+      .filter(node => node.id !== selectedNodeId) // Exclude current node
+      .map(node => node.data.name)
+      .sort((a, b) => b.length - a.length)
+
+    if (characterNames.length === 0) {
+      return <p className="text-sm text-gray leading-relaxed whitespace-pre-line">{description}</p>
+    }
+
+    // Split by line breaks first, then process each line
+    const lines = description.split('\n')
+    let globalKeyIndex = 0
+
+    return (
+      <p className="text-sm text-gray leading-relaxed">
+        {lines.map((line, lineIndex) => {
+          // Create a regex pattern that matches character names
+          const namePattern = new RegExp(
+            `(${characterNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`,
+            'gi'
+          )
+
+          const parts: (string | JSX.Element)[] = []
+          let lastIndex = 0
+          let match: RegExpExecArray | null
+
+          // Reset regex lastIndex
+          namePattern.lastIndex = 0
+
+          while ((match = namePattern.exec(line)) !== null) {
+            // Add text before the match
+            if (match.index > lastIndex) {
+              parts.push(line.substring(lastIndex, match.index))
+            }
+
+            // Find the matching node
+            const matchedName = match[0]
+            const matchedNode = nodes.find(node => 
+              node.data.name.toLowerCase() === matchedName.toLowerCase()
+            )
+
+            if (matchedNode && matchedNode.id !== selectedNodeId) {
+              // Create clickable link for the character name
+              parts.push(
+                <button
+                  key={`link-${globalKeyIndex++}-${lineIndex}-${match.index}`}
+                  onClick={() => {
+                    setSelectedNodeId(matchedNode.id)
+                    setIsEditingDescription(false)
+                  }}
+                  className="text-primary font-medium hover:underline cursor-pointer"
+                >
+                  {matchedName}
+                </button>
+              )
+            } else {
+              // Just add the text if not found
+              parts.push(matchedName)
+            }
+
+            lastIndex = match.index + match[0].length
+          }
+
+          // Add remaining text
+          if (lastIndex < line.length) {
+            parts.push(line.substring(lastIndex))
+          }
+
+          // If no matches, return the original line
+          if (parts.length === 0) {
+            parts.push(line)
+          }
+
+          return (
+            <span key={`line-${lineIndex}`}>
+              {parts}
+              {lineIndex < lines.length - 1 && <br />}
+            </span>
+          )
+        })}
+      </p>
+    )
+  }
+
   // Initial nodes
   const initialNodes: Node<CharacterNodeData>[] = [
     {
@@ -115,7 +204,12 @@ export default function DashboardPage() {
       position: { x: 250, y: 50 },
       data: {
         name: 'Queen Selara',
-        description: 'Former healer from the eastern isles, queen of Eldoria.',
+        description: `Queen Selara hails from the mist-shrouded Eastern Isles, where she once served as a gifted healer before her marriage to King Eldor bound two distant realms. Though foreign to Eldoria's courtly intrigues, Selara's calm presence and compassion quickly earned her the loyalty of the common folk and the cautious respect of the nobility.
+
+During the Siege of Eldor, she tended to the wounded herself, transforming the palace halls into makeshift infirmaries. Many still whisper that her healing saved the king's life after the final assault. Yet behind her serene demeanor lies quiet political acumen—Selara often mediates between Eldor's hard-edged advisors, especially Mira Valen and Captain Aris Vorn, whose rivalry threatens the fragile peace of the court.
+
+Selara's devotion to her children, Prince Kael and Princess Lyra, anchors her amidst the turbulence of rule. To Eldoria's people, she represents the heart that softens the crown—a queen whose mercy tempers the steel of her husband's reign.
+`,
         bgColor: 'bg-blue-100',
         borderColor: 'border-blue-200',
         textColor: 'text-gray-dark',
@@ -128,7 +222,16 @@ export default function DashboardPage() {
       position: { x: 400, y: 150 },
       data: {
         name: 'King Eldor',
-        description: "The current ruler of Eldoria, known for uniting the realm after his father's death.",
+        description: `King Eldor is the reigning monarch of Eldoria, a ruler forged in the aftermath of his father's death and the chaos that followed. Ten years after King Arion's passing, Eldor ascended the throne amid political unrest and the looming threat of rebellion. His leadership during the Siege of Eldor defined a new era—marked by both unity and unease.
+
+Once a disciplined commander under his father's reign, Eldor rose to power through sheer resolve. With his queen, Selara, he strives to stabilize a kingdom scarred by war, though his rule often balances on a knife's edge between diplomacy and domination.
+
+Eldor is advised by Mira Valen, whose sharp counsel and past in the Order of the Flame lend him strategic insight. He entrusts the protection of the crown to Captain Aris Vorn, yet whispers in the court suggest growing tensions between Aris's loyalty and Mira's influence.
+
+Despite his power, Eldor remains haunted by his father's shadow and the legacy of King Arion, whose ideals of faith and honor often clash with Eldor's pragmatic rule. His rivalry with Lord Kaen Darros threatens to ignite civil unrest, while his strained alliance with Grandmaster Thalos of the Order hints at deeper ideological divides.
+
+To his people, Eldor is both savior and symbol—a king who rebuilt what was broken but may yet sow the seeds of a new conflict.
+`,
         bgColor: 'bg-pink-100',
         borderColor: 'border-primary',
         textColor: 'text-gray-dark',
@@ -142,7 +245,14 @@ export default function DashboardPage() {
       position: { x: 500, y: 250 },
       data: {
         name: 'Prince Kael',
-        description: "Heir to the throne; idealistic but conflicted about his father's rule.",
+        description: `Prince Kael, heir to the throne of Eldoria, stands at the crossroads between legacy and change. Born during the final years of the Siege of Eldor, he grew up amidst reconstruction and the quiet disillusionment of a kingdom rebuilding from ash. Unlike his father, King Eldor, Kael believes peace cannot be forged solely through strength. He dreams of a gentler Eldoria—one guided by diplomacy, education, and trust in its people.
+
+Despite his noble ideals, Kael's defiance often puts him at odds with his father's hardened rule. His mother, Queen Selara, remains his closest confidant, encouraging his compassion even as the court whispers that his youth blinds him to the realities of power. Torn between admiration and resentment, Kael struggles to live up to a legacy that glorifies war while his heart seeks peace.
+
+His bond with Princess Lyra keeps him grounded, though his friendship with Sister Nira of the Order of the Flame has begun to draw suspicion—especially from Captain Aris Vorn, who sees danger in the prince's sympathies toward the old faith.
+
+To the realm, Kael is the promise of renewal; to his father, he is a reminder that the next age may not be his own.
+`,
         bgColor: 'bg-blue-100',
         borderColor: 'border-blue-200',
         textColor: 'text-gray-dark',
@@ -155,7 +265,12 @@ export default function DashboardPage() {
       position: { x: 600, y: 100 },
       data: {
         name: 'Captain Aris Vorn',
-        description: 'Commander of the Royal Guard; Loyal to Eldor since the Great War.',
+        description: `Captain Aris Vorn commands the Royal Guard of Eldoria, a soldier whose loyalty to King Eldor was forged in the blood and fire of the Siege of Eldor. Once a battlefield companion of Mira Valen, Aris now embodies the rigid discipline and honor of the old guard—unquestioning service to crown and country.
+
+Though respected for his valor, Aris often clashes with Mira's strategic pragmatism and Queen Selara's diplomacy. He believes strength—not negotiation—is the surest path to stability. His devotion to Eldor borders on absolute, yet beneath the iron exterior lies a man weary of endless war, quietly haunted by the memory of fallen comrades and the shadow of King Arion, whose ideals he still holds sacred.
+
+Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, and struggling to serve a peace he no longer fully understands.
+`,
         bgColor: 'bg-purple-100',
         borderColor: 'border-purple-200',
         textColor: 'text-gray-dark',
@@ -181,8 +296,10 @@ export default function DashboardPage() {
       position: { x: 600, y: 350 },
       data: {
         name: 'Mira Valen',
-        description: "Advisor and former knight; Once served in the Order of the Flame; now Eldor's chief strategist.",
-        bgColor: 'bg-purple-100',
+        description: `Once a rising knight within the Order of the Flame, Mira Valen walked away from the Order after witnessing its corruption during the Siege of Eldor. Her tactical brilliance and unwavering sense of purpose caught the attention of King Eldor, who named her his royal strategist and closest counselor.\n
+        Though admired for her intellect, Mira's past ties to the Order make her a figure of quiet controversy within the palace. Many question where her loyalty truly lies—between the crown she now serves or the faith she once abandoned. Her friendship with Queen Selara lends her warmth among the royal circle, but her rivalry with Captain Aris Vorn simmers beneath the surface, each challenging the other's vision of how Eldoria should be defended.\n
+        To Eldor, she is both weapon and conscience: the one who helps him win wars, and the one who reminds him why he fights them.`,
+                bgColor: 'bg-purple-100',
         borderColor: 'border-purple-200',
         textColor: 'text-gray-dark',
         iconColor: 'text-purple-600',
@@ -908,7 +1025,7 @@ export default function DashboardPage() {
                       </svg>
                       <h4 className="font-semibold text-gray-dark">{selectedNode.data.name}</h4>
                     </div>
-                    <p className="text-xs text-gray">{selectedNode.data.description}</p>
+                    <p className="text-xs text-gray line-clamp-3 overflow-hidden">{selectedNode.data.description}</p>
                   </div>
                 </div>
 
@@ -963,7 +1080,7 @@ export default function DashboardPage() {
                         </div>
                       </div>
                     ) : (
-                      <p className="text-sm text-gray leading-relaxed">{selectedNode.data.description}</p>
+                      renderDescriptionWithLinks(selectedNode.data.description)
                     )}
                   </div>
 
