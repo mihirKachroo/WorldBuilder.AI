@@ -1,0 +1,9 @@
+Flask==3.0.0
+Flask-CORS==4.0.0
+python-dotenv==1.0.0
+Werkzeug==3.0.1
+PyJWT==2.8.0
+Flask-SQLAlchemy==3.1.1
+# Use SQLite for development (no PostgreSQL needed)
+# psycopg2-binary==2.9.9  # Commented out - use SQLite instead
+

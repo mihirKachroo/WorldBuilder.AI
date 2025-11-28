@@ -44,3 +44,5 @@ dist/
 *.swo
 *~
 
+/backend/venv/
+*.md

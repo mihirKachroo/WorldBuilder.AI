@@ -3,4 +3,9 @@ Flask-CORS==4.0.0
 python-dotenv==1.0.0
 Werkzeug==3.0.1
 PyJWT==2.8.0
+Flask-SQLAlchemy==3.1.1
+# PostgreSQL driver (optional - only needed if using PostgreSQL)
+# Uncomment the line below if you want to use PostgreSQL instead of SQLite:
+# psycopg2-binary==2.9.9
+# alembic==1.13.1  # Optional: for database migrations
 

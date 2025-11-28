@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import ReactFlow, {
   Node,
   Edge,
@@ -14,8 +14,26 @@ import ReactFlow, {
   MarkerType,
   Handle,
   Position,
+  ReactFlowInstance,
 } from 'reactflow'
 import 'reactflow/dist/style.css'
+import {
+  getProjects,
+  createProject,
+  getCharacters,
+  createCharacter,
+  updateCharacter,
+  deleteCharacter,
+  getRelationships,
+  createRelationship,
+  updateRelationship,
+  deleteRelationship,
+  type Project,
+  type Character as ApiCharacter,
+  type Relationship as ApiRelationship,
+  type ApiError,
+} from '@/lib/api'
+import { useRouter } from 'next/navigation'
 
 // Custom Character Node Component
 interface CharacterNodeData {
@@ -26,29 +44,85 @@ interface CharacterNodeData {
   textColor: string
   iconColor: string
   isFocused?: boolean
+  isHighlighted?: boolean
+  characterId?: number // Store the database ID
 }
 
 const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
+  const isHighlighted = data.isHighlighted || false
   return (
     <div
       className={`rounded-lg p-3 shadow-sm w-48 relative ${data.bgColor} ${data.borderColor} ${
-        data.isFocused ? 'border-2 shadow-md' : 'border'
+        isHighlighted ? 'border-2 border-primary shadow-lg ring-2 ring-primary ring-opacity-50' : 'border'
       }`}
+      style={{ pointerEvents: 'auto' }}
     >
-      {/* Source Handle - Right side for outgoing connections */}
+      {/* Source Handles - All sides for automatic routing */}
+      <Handle
+        type="source"
+        position={Position.Top}
+        id="source-top"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
       <Handle
         type="source"
         position={Position.Right}
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white"
-        style={{ top: '50%', transform: 'translateY(-50%)' }}
+        id="source-right"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="source-bottom"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="source-left"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
       />
       
-      {/* Target Handle - Left side for incoming connections */}
+      {/* Target Handles - All sides for automatic routing */}
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="target-top"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="target"
+        position={Position.Right}
+        id="target-right"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="target"
+        position={Position.Bottom}
+        id="target-bottom"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
       <Handle
         type="target"
         position={Position.Left}
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white"
-        style={{ top: '50%', transform: 'translateY(-50%)' }}
+        id="target-left"
+        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
       />
 
       <div className="flex items-start justify-between mb-2">
@@ -72,6 +146,7 @@ const nodeTypes = {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
   const [activeTab, setActiveTab] = useState('Characters')
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'world-lore': true,
@@ -80,12 +155,210 @@ export default function DashboardPage() {
     'entities': true,
   })
   const [selectedConversation, setSelectedConversation] = useState('king-of-eldoria')
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('king-eldor')
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [isEditingDescription, setIsEditingDescription] = useState(false)
   const [editedDescription, setEditedDescription] = useState('')
   const [showNewNodeModal, setShowNewNodeModal] = useState(false)
   const [newNodeName, setNewNodeName] = useState('')
   const [newNodeDescription, setNewNodeDescription] = useState('')
+  
+  // Relationship modal state
+  const [showRelationshipModal, setShowRelationshipModal] = useState(false)
+  const [pendingConnection, setPendingConnection] = useState<Connection | null>(null)
+  const [relationshipLabel, setRelationshipLabel] = useState('')
+  
+  // Edge editing state
+  const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null)
+  const [editingEdgeLabel, setEditingEdgeLabel] = useState('')
+  
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    visible: boolean
+    x: number
+    y: number
+    nodeId: string | null
+  }>({ visible: false, x: 0, y: 0, nodeId: null })
+  
+  // Edit modals state
+  const [showEditNameModal, setShowEditNameModal] = useState(false)
+  const [editingName, setEditingName] = useState('')
+  const [showEditColorModal, setShowEditColorModal] = useState(false)
+  
+  // API state
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  
+  // Track connection state
+  const [connectionStart, setConnectionStart] = useState<{ nodeId: string; handleId: string | null } | null>(null)
+  const [pendingNewNodeFromConnection, setPendingNewNodeFromConnection] = useState<{
+    sourceNodeId: string
+    sourceHandleId: string | null
+    position: { x: number; y: number }
+  } | null>(null)
+  
+  // Track position for new node created by dragging from a handle
+  const [draggedNodePosition, setDraggedNodePosition] = useState<{ x: number; y: number } | null>(null)
+
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  
+  // ReactFlow instance ref for coordinate conversion
+  const reactFlowInstance = useRef<ReactFlowInstance | null>(null)
+
+  // Helper function to calculate optimal handle positions
+  const calculateOptimalHandles = useCallback((sourceNode: Node<CharacterNodeData>, targetNode: Node<CharacterNodeData>) => {
+    const dx = targetNode.position.x - sourceNode.position.x
+    const dy = targetNode.position.y - sourceNode.position.y
+    
+    let sourceHandle: string
+    let targetHandle: string
+    
+    // Determine source handle based on direction to target
+    if (Math.abs(dx) > Math.abs(dy)) {
+      sourceHandle = dx > 0 ? 'source-right' : 'source-left'
+    } else {
+      sourceHandle = dy > 0 ? 'source-bottom' : 'source-top'
+    }
+    
+    // Determine target handle based on direction from source
+    if (Math.abs(dx) > Math.abs(dy)) {
+      targetHandle = dx > 0 ? 'target-left' : 'target-right'
+    } else {
+      targetHandle = dy > 0 ? 'target-top' : 'target-bottom'
+    }
+    
+    return { sourceHandle, targetHandle }
+  }, [])
+
+  const loadProjects = useCallback(async () => {
+    try {
+      setLoading(true)
+      const projectsList = await getProjects()
+      setProjects(projectsList)
+      
+      // Auto-select first project if available
+      if (projectsList.length > 0 && !selectedProjectId) {
+        setSelectedProjectId(projectsList[0].id)
+      }
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to load projects')
+      // If unauthorized, redirect to login
+      if (apiError.status === 401) {
+        router.push('/login')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [router, selectedProjectId, setProjects, setSelectedProjectId])
+
+  const loadCharactersAndRelationships = useCallback(async () => {
+    if (!selectedProjectId) return
+
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const [characters, relationships] = await Promise.all([
+        getCharacters(selectedProjectId),
+        getRelationships(selectedProjectId),
+      ])
+
+      // Convert API characters to ReactFlow nodes
+      const flowNodes: Node<CharacterNodeData>[] = characters.map((char) => ({
+        id: `char-${char.id}`,
+        type: 'character',
+        position: char.position || { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 },
+        data: {
+          name: char.name,
+          description: char.description || '',
+          bgColor: char.colors?.bg || 'bg-blue-100',
+          borderColor: char.colors?.border || 'border-blue-200',
+          textColor: char.colors?.text || 'text-gray-dark',
+          iconColor: char.colors?.icon || 'text-blue-600',
+          characterId: char.id,
+        },
+      }))
+
+      // Convert API relationships to ReactFlow edges
+      const flowEdges: Edge[] = relationships.map((rel) => {
+        const sourceNode = flowNodes.find(n => n.id === `char-${rel.source_character_id}`)
+        const targetNode = flowNodes.find(n => n.id === `char-${rel.target_character_id}`)
+        
+        // Calculate optimal handle positions based on node positions
+        let sourceHandle: string | undefined
+        let targetHandle: string | undefined
+        
+        if (sourceNode && targetNode) {
+          const { sourceHandle: calculatedSource, targetHandle: calculatedTarget } = calculateOptimalHandles(sourceNode, targetNode)
+          sourceHandle = calculatedSource
+          targetHandle = calculatedTarget
+        }
+        
+        return {
+          id: `rel-${rel.id}`,
+          source: `char-${rel.source_character_id}`,
+          target: `char-${rel.target_character_id}`,
+          sourceHandle,
+          targetHandle,
+          label: rel.label || 'connected to',
+          type: 'smoothstep',
+          style: { stroke: '#5B21B6', strokeWidth: 2 },
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: '#5B21B6',
+          },
+          labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
+          labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+          data: { relationshipId: rel.id },
+        }
+      })
+
+      setNodes(flowNodes)
+      setEdges(flowEdges)
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to load data')
+      if (apiError.status === 401) {
+        router.push('/login')
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedProjectId, router, setNodes, setEdges, calculateOptimalHandles])
+
+  // Load projects on mount
+  useEffect(() => {
+    loadProjects()
+  }, [loadProjects])
+
+  // Load characters and relationships when project is selected
+  useEffect(() => {
+    if (selectedProjectId) {
+      loadCharactersAndRelationships()
+    }
+  }, [selectedProjectId, loadCharactersAndRelationships])
+
+  const handleCreateProject = async () => {
+    const projectName = prompt('Enter project name:')
+    if (!projectName) return
+
+    try {
+      setSaving(true)
+      const newProject = await createProject(projectName)
+      setProjects([...projects, newProject])
+      setSelectedProjectId(newProject.id)
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to create project')
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
@@ -183,240 +456,126 @@ export default function DashboardPage() {
     )
   }
 
-  // Initial nodes
-  const initialNodes: Node<CharacterNodeData>[] = [
-    {
-      id: 'king-arion',
-      type: 'character',
-      position: { x: 200, y: 100 },
-      data: {
-        name: 'King Arion',
-        description: 'Former monarch, died 10 years before the Siege of Eldor.',
-        bgColor: 'bg-blue-100',
-        borderColor: 'border-blue-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-blue-600',
-      },
-    },
-    {
-      id: 'queen-selara',
-      type: 'character',
-      position: { x: 250, y: 50 },
-      data: {
-        name: 'Queen Selara',
-        description: `Queen Selara hails from the mist-shrouded Eastern Isles, where she once served as a gifted healer before her marriage to King Eldor bound two distant realms. Though foreign to Eldoria's courtly intrigues, Selara's calm presence and compassion quickly earned her the loyalty of the common folk and the cautious respect of the nobility.
-
-During the Siege of Eldor, she tended to the wounded herself, transforming the palace halls into makeshift infirmaries. Many still whisper that her healing saved the king's life after the final assault. Yet behind her serene demeanor lies quiet political acumen—Selara often mediates between Eldor's hard-edged advisors, especially Mira Valen and Captain Aris Vorn, whose rivalry threatens the fragile peace of the court.
-
-Selara's devotion to her children, Prince Kael and Princess Lyra, anchors her amidst the turbulence of rule. To Eldoria's people, she represents the heart that softens the crown—a queen whose mercy tempers the steel of her husband's reign.
-`,
-        bgColor: 'bg-blue-100',
-        borderColor: 'border-blue-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-blue-600',
-      },
-    },
-    {
-      id: 'king-eldor',
-      type: 'character',
-      position: { x: 400, y: 150 },
-      data: {
-        name: 'King Eldor',
-        description: `King Eldor is the reigning monarch of Eldoria, a ruler forged in the aftermath of his father's death and the chaos that followed. Ten years after King Arion's passing, Eldor ascended the throne amid political unrest and the looming threat of rebellion. His leadership during the Siege of Eldor defined a new era—marked by both unity and unease.
-
-Once a disciplined commander under his father's reign, Eldor rose to power through sheer resolve. With his queen, Selara, he strives to stabilize a kingdom scarred by war, though his rule often balances on a knife's edge between diplomacy and domination.
-
-Eldor is advised by Mira Valen, whose sharp counsel and past in the Order of the Flame lend him strategic insight. He entrusts the protection of the crown to Captain Aris Vorn, yet whispers in the court suggest growing tensions between Aris's loyalty and Mira's influence.
-
-Despite his power, Eldor remains haunted by his father's shadow and the legacy of King Arion, whose ideals of faith and honor often clash with Eldor's pragmatic rule. His rivalry with Lord Kaen Darros threatens to ignite civil unrest, while his strained alliance with Grandmaster Thalos of the Order hints at deeper ideological divides.
-
-To his people, Eldor is both savior and symbol—a king who rebuilt what was broken but may yet sow the seeds of a new conflict.
-`,
-        bgColor: 'bg-pink-100',
-        borderColor: 'border-primary',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-primary',
-        isFocused: true,
-      },
-    },
-    {
-      id: 'prince-kael',
-      type: 'character',
-      position: { x: 500, y: 250 },
-      data: {
-        name: 'Prince Kael',
-        description: `Prince Kael, heir to the throne of Eldoria, stands at the crossroads between legacy and change. Born during the final years of the Siege of Eldor, he grew up amidst reconstruction and the quiet disillusionment of a kingdom rebuilding from ash. Unlike his father, King Eldor, Kael believes peace cannot be forged solely through strength. He dreams of a gentler Eldoria—one guided by diplomacy, education, and trust in its people.
-
-Despite his noble ideals, Kael's defiance often puts him at odds with his father's hardened rule. His mother, Queen Selara, remains his closest confidant, encouraging his compassion even as the court whispers that his youth blinds him to the realities of power. Torn between admiration and resentment, Kael struggles to live up to a legacy that glorifies war while his heart seeks peace.
-
-His bond with Princess Lyra keeps him grounded, though his friendship with Sister Nira of the Order of the Flame has begun to draw suspicion—especially from Captain Aris Vorn, who sees danger in the prince's sympathies toward the old faith.
-
-To the realm, Kael is the promise of renewal; to his father, he is a reminder that the next age may not be his own.
-`,
-        bgColor: 'bg-blue-100',
-        borderColor: 'border-blue-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-blue-600',
-      },
-    },
-    {
-      id: 'captain-aris',
-      type: 'character',
-      position: { x: 600, y: 100 },
-      data: {
-        name: 'Captain Aris Vorn',
-        description: `Captain Aris Vorn commands the Royal Guard of Eldoria, a soldier whose loyalty to King Eldor was forged in the blood and fire of the Siege of Eldor. Once a battlefield companion of Mira Valen, Aris now embodies the rigid discipline and honor of the old guard—unquestioning service to crown and country.
-
-Though respected for his valor, Aris often clashes with Mira's strategic pragmatism and Queen Selara's diplomacy. He believes strength—not negotiation—is the surest path to stability. His devotion to Eldor borders on absolute, yet beneath the iron exterior lies a man weary of endless war, quietly haunted by the memory of fallen comrades and the shadow of King Arion, whose ideals he still holds sacred.
-
-Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, and struggling to serve a peace he no longer fully understands.
-`,
-        bgColor: 'bg-purple-100',
-        borderColor: 'border-purple-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-purple-600',
-      },
-    },
-    {
-      id: 'high-seer-elenwen',
-      type: 'character',
-      position: { x: 600, y: 250 },
-      data: {
-        name: 'High Seer Elenwen',
-        description: 'Court prophet; Interprets omens; rumored to have opposed the war privately.',
-        bgColor: 'bg-purple-100',
-        borderColor: 'border-purple-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-purple-600',
-      },
-    },
-    {
-      id: 'mira-valen',
-      type: 'character',
-      position: { x: 600, y: 350 },
-      data: {
-        name: 'Mira Valen',
-        description: `Once a rising knight within the Order of the Flame, Mira Valen walked away from the Order after witnessing its corruption during the Siege of Eldor. Her tactical brilliance and unwavering sense of purpose caught the attention of King Eldor, who named her his royal strategist and closest counselor.\n
-        Though admired for her intellect, Mira's past ties to the Order make her a figure of quiet controversy within the palace. Many question where her loyalty truly lies—between the crown she now serves or the faith she once abandoned. Her friendship with Queen Selara lends her warmth among the royal circle, but her rivalry with Captain Aris Vorn simmers beneath the surface, each challenging the other's vision of how Eldoria should be defended.\n
-        To Eldor, she is both weapon and conscience: the one who helps him win wars, and the one who reminds him why he fights them.`,
-                bgColor: 'bg-purple-100',
-        borderColor: 'border-purple-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-purple-600',
-      },
-    },
-  ]
-
-  // Initial edges
-  const initialEdges: Edge[] = [
-    {
-      id: 'arion-eldor',
-      source: 'king-eldor',
-      target: 'king-arion',
-      label: 'son of',
-      type: 'smoothstep',
-      style: { stroke: '#3B82F6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#3B82F6',
-      },
-      labelStyle: { fill: '#2563EB', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-    {
-      id: 'arion-selara',
-      source: 'king-eldor',
-      target: 'queen-selara',
-      label: 'husband of',
-      type: 'smoothstep',
-      style: { stroke: '#3B82F6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#3B82F6',
-      },
-      labelStyle: { fill: '#2563EB', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-    {
-      id: 'eldor-kael',
-      source: 'king-eldor',
-      target: 'prince-kael',
-      label: 'father of',
-      type: 'smoothstep',
-      style: { stroke: '#3B82F6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#3B82F6',
-      },
-      labelStyle: { fill: '#2563EB', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-    {
-      id: 'eldor-aris',
-      source: 'king-eldor',
-      target: 'captain-aris',
-      label: 'commands',
-      type: 'smoothstep',
-      style: { stroke: '#5B21B6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#5B21B6',
-      },
-      labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-    {
-      id: 'eldor-elenwen',
-      source: 'king-eldor',
-      target: 'high-seer-elenwen',
-      label: 'consults',
-      type: 'smoothstep',
-      style: { stroke: '#5B21B6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#5B21B6',
-      },
-      labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-    {
-      id: 'mira-eldor',
-      source: 'king-eldor',
-      target: 'mira-valen',
-      label: 'advised by',
-      type: 'smoothstep',
-      style: { stroke: '#5B21B6', strokeWidth: 2 },
-      markerEnd: {
-        type: MarkerType.ArrowClosed,
-        color: '#5B21B6',
-      },
-      labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
-      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
-    },
-  ]
-
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
-
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node<CharacterNodeData>) => {
     setSelectedNodeId(node.id)
     setIsEditingDescription(false)
+    setContextMenu({ visible: false, x: 0, y: 0, nodeId: null })
   }, [])
 
-  const handleAddNode = useCallback(() => {
-    if (!newNodeName.trim()) return
+  const onNodeMouseEnter = useCallback((_event: React.MouseEvent, node: Node<CharacterNodeData>) => {
+    setHoveredNodeId(node.id)
+  }, [])
+
+  const onNodeMouseLeave = useCallback(() => {
+    setHoveredNodeId(null)
+  }, [])
+
+  // Recalculate edge handles when nodes move
+  const recalculateEdgeHandles = useCallback((movedNodeId: string, currentNodes: Node<CharacterNodeData>[]) => {
+    const movedNode = currentNodes.find(n => n.id === movedNodeId)
+    if (!movedNode) return
+
+    // Recalculate handles for all connected edges
+    setEdges((currentEdges) =>
+      currentEdges.map((edge) => {
+        if (edge.source === movedNodeId || edge.target === movedNodeId) {
+          const sourceNode = currentNodes.find(n => n.id === edge.source)
+          const targetNode = currentNodes.find(n => n.id === edge.target)
+          
+          if (sourceNode && targetNode) {
+            const { sourceHandle, targetHandle } = calculateOptimalHandles(sourceNode, targetNode)
+            return {
+              ...edge,
+              sourceHandle,
+              targetHandle,
+            }
+          }
+        }
+        return edge
+      })
+    )
+  }, [calculateOptimalHandles, setEdges])
+
+  const onNodeDragStop = useCallback(async (_event: React.MouseEvent, node: Node<CharacterNodeData>) => {
+    if (!selectedProjectId || !node.data.characterId) return
+
+    try {
+      // Save position to database
+      await updateCharacter(selectedProjectId, node.data.characterId, {
+        position: { x: node.position.x, y: node.position.y },
+      })
+
+      // Recalculate edge handles for all edges connected to this node
+      // Use functional update to get the latest nodes state
+      setNodes((currentNodes) => {
+        recalculateEdgeHandles(node.id, currentNodes)
+        return currentNodes // Return unchanged since ReactFlow already updated positions
+      })
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to save node position')
+    }
+  }, [selectedProjectId, recalculateEdgeHandles, setNodes])
+
+  const onNodeContextMenu = useCallback((event: React.MouseEvent, node: Node<CharacterNodeData>) => {
+    event.preventDefault()
+    setContextMenu({
+      visible: true,
+      x: event.clientX,
+      y: event.clientY,
+      nodeId: node.id,
+    })
+    setSelectedNodeId(node.id)
+  }, [])
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({ visible: false, x: 0, y: 0, nodeId: null })
+  }, [])
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    const handleClickOutside = () => {
+      if (contextMenu.visible) {
+        closeContextMenu()
+      }
+    }
+    document.addEventListener('click', handleClickOutside)
+    return () => document.removeEventListener('click', handleClickOutside)
+  }, [contextMenu.visible, closeContextMenu])
+
+  const handleAddNode = useCallback(async () => {
+    if (!newNodeName.trim() || !selectedProjectId) return
+    
+    try {
+      setSaving(true)
+      
+      // Use draggedNodePosition if available, otherwise use random position
+      const position = draggedNodePosition || { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 }
+      
+      const newCharacter = await createCharacter(selectedProjectId, {
+        name: newNodeName.trim(),
+        description: newNodeDescription.trim() || '',
+        position: position,
+        colors: {
+          bg: 'bg-blue-100',
+          border: 'border-blue-200',
+          text: 'text-gray-dark',
+          icon: 'text-blue-600',
+        },
+      })
     
     const newNode: Node<CharacterNodeData> = {
-      id: `node-${Date.now()}`,
+        id: `char-${newCharacter.id}`,
       type: 'character',
-      position: { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 },
+        position: newCharacter.position || position,
       data: {
-        name: newNodeName.trim(),
-        description: newNodeDescription.trim() || 'No description provided.',
-        bgColor: 'bg-blue-100',
-        borderColor: 'border-blue-200',
-        textColor: 'text-gray-dark',
-        iconColor: 'text-blue-600',
+          name: newCharacter.name,
+          description: newCharacter.description || '',
+          bgColor: newCharacter.colors?.bg || 'bg-blue-100',
+          borderColor: newCharacter.colors?.border || 'border-blue-200',
+          textColor: newCharacter.colors?.text || 'text-gray-dark',
+          iconColor: newCharacter.colors?.icon || 'text-blue-600',
+          characterId: newCharacter.id,
       },
     }
     
@@ -425,11 +584,31 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
     setNewNodeName('')
     setNewNodeDescription('')
     setShowNewNodeModal(false)
-  }, [newNodeName, newNodeDescription, setNodes])
+    setDraggedNodePosition(null) // Clear dragged position after creating node
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to create character')
+    } finally {
+      setSaving(false)
+    }
+  }, [newNodeName, newNodeDescription, selectedProjectId, setNodes, setSelectedNodeId, draggedNodePosition])
 
-  const handleDeleteNode = useCallback((nodeId: string) => {
+  const handleDeleteNode = useCallback(async (nodeId: string) => {
+    if (!selectedProjectId) return
+
+    const node = nodes.find(n => n.id === nodeId)
+    if (!node || !node.data.characterId) return
+
+    if (!confirm(`Are you sure you want to delete "${node.data.name}"? This will also remove all connections to this entity.`)) {
+      return
+    }
+
+    try {
+      setSaving(true)
+      await deleteCharacter(selectedProjectId, node.data.characterId)
+      
     // Remove the node
-    setNodes((nds) => nds.filter((node) => node.id !== nodeId))
+      setNodes((nds) => nds.filter((n) => n.id !== nodeId))
     
     // Remove all edges connected to this node
     setEdges((eds) => eds.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
@@ -439,22 +618,96 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
       setSelectedNodeId(null)
       setIsEditingDescription(false)
     }
-  }, [setNodes, setEdges, selectedNodeId])
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to delete character')
+    } finally {
+      setSaving(false)
+    }
+  }, [selectedProjectId, nodes, selectedNodeId, setNodes, setEdges])
 
-  const onConnect = useCallback(
-    (params: Connection) => {
-      // Only create edge if source and target are valid
-      if (!params.source || !params.target) {
+  const onConnect = useCallback((params: Connection) => {
+    console.log('✅ onConnect called:', params)
+    if (!params.source || !params.target || !selectedProjectId) {
+      console.log('❌ Connection rejected: missing source, target, or project', { source: params.source, target: params.target, selectedProjectId })
         return
       }
+
+    // Extract character IDs from node IDs
+    const sourceNode = nodes.find(n => n.id === params.source)
+    const targetNode = nodes.find(n => n.id === params.target)
+    
+    console.log('Source node:', sourceNode, 'Target node:', targetNode)
+    
+    if (!sourceNode?.data.characterId || !targetNode?.data.characterId) {
+      console.log('❌ Connection rejected: missing character IDs', { sourceNode, targetNode })
+      return
+    }
+
+    // Fix handle IDs if they're incorrect (e.g., sourceHandle is 'target-right' instead of 'source-right')
+    let sourceHandle = params.sourceHandle
+    let targetHandle = params.targetHandle
+    
+    // If sourceHandle starts with 'target-', it's wrong - calculate optimal handles instead
+    if (sourceHandle && sourceHandle.startsWith('target-')) {
+      console.log('⚠️ Invalid sourceHandle detected:', sourceHandle, '- calculating optimal handles')
+      const { sourceHandle: calculatedSource, targetHandle: calculatedTarget } = calculateOptimalHandles(sourceNode, targetNode)
+      sourceHandle = calculatedSource
+      targetHandle = calculatedTarget
+    } else if (!sourceHandle || !targetHandle) {
+      // If handles are missing, calculate optimal positions
+      const { sourceHandle: calculatedSource, targetHandle: calculatedTarget } = calculateOptimalHandles(sourceNode, targetNode)
+      sourceHandle = calculatedSource
+      targetHandle = calculatedTarget
+    }
+
+    console.log('✅ All checks passed, showing modal with handles:', { sourceHandle, targetHandle })
+    // Store the pending connection with corrected handles
+    setPendingConnection({
+      ...params,
+      sourceHandle,
+      targetHandle,
+    })
+    setRelationshipLabel('')
+    setShowRelationshipModal(true)
+  }, [selectedProjectId, nodes, calculateOptimalHandles])
+
+  const handleCreateRelationship = useCallback(async () => {
+    if (!pendingConnection || !selectedProjectId) return
+
+    const sourceNode = nodes.find(n => n.id === pendingConnection.source)
+    const targetNode = nodes.find(n => n.id === pendingConnection.target)
+    
+    if (!sourceNode?.data.characterId || !targetNode?.data.characterId) return
+
+    try {
+      setSaving(true)
+      
+      const newRelationship = await createRelationship(selectedProjectId, {
+        source_character_id: sourceNode.data.characterId,
+        target_character_id: targetNode.data.characterId,
+        label: relationshipLabel.trim() || 'connected to',
+      })
+
+      // Determine the best handle positions based on node positions
+      let sourceHandle = pendingConnection.sourceHandle
+      let targetHandle = pendingConnection.targetHandle
+      
+      // If handles weren't specified, calculate optimal positions
+      if (sourceNode && targetNode && !sourceHandle && !targetHandle) {
+        const { sourceHandle: calculatedSource, targetHandle: calculatedTarget } = calculateOptimalHandles(sourceNode, targetNode)
+        sourceHandle = calculatedSource
+        targetHandle = calculatedTarget
+      }
+
       const newEdge: Edge = {
-        id: `${params.source}-${params.target}-${Date.now()}`,
-        source: params.source,
-        target: params.target,
-        sourceHandle: params.sourceHandle ?? null,
-        targetHandle: params.targetHandle ?? null,
+        id: `rel-${newRelationship.id}`,
+        source: pendingConnection.source!,
+        target: pendingConnection.target!,
+        sourceHandle: sourceHandle || undefined,
+        targetHandle: targetHandle || undefined,
         type: 'smoothstep',
-        label: 'connected to',
+        label: newRelationship.label || 'connected to',
         style: { stroke: '#5B21B6', strokeWidth: 2 },
         markerEnd: {
           type: MarkerType.ArrowClosed,
@@ -462,11 +715,237 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
         },
         labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
         labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+        data: { relationshipId: newRelationship.id },
       }
+      
       setEdges((eds) => addEdge(newEdge, eds))
+      setShowRelationshipModal(false)
+      setPendingConnection(null)
+      setRelationshipLabel('')
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to create relationship')
+    } finally {
+      setSaving(false)
+    }
+  }, [pendingConnection, selectedProjectId, nodes, relationshipLabel, setEdges, calculateOptimalHandles])
+
+  const onEdgeDoubleClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    setEditingEdgeId(edge.id)
+    setEditingEdgeLabel(edge.label as string || '')
+  }, [])
+
+  const handleUpdateEdgeLabel = useCallback(async () => {
+    if (!editingEdgeId || !selectedProjectId) return
+
+    const edge = edges.find(e => e.id === editingEdgeId)
+    if (!edge || !edge.data?.relationshipId) return
+
+    try {
+      setSaving(true)
+      await updateRelationship(selectedProjectId, edge.data.relationshipId, {
+        label: editingEdgeLabel.trim() || 'connected to',
+      })
+
+      // Update the edge in state
+      setEdges((eds) =>
+        eds.map((e) =>
+          e.id === editingEdgeId
+            ? {
+                ...e,
+                label: editingEdgeLabel.trim() || 'connected to',
+              }
+            : e
+        )
+      )
+      setEditingEdgeId(null)
+      setEditingEdgeLabel('')
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to update relationship')
+    } finally {
+      setSaving(false)
+    }
+  }, [editingEdgeId, editingEdgeLabel, selectedProjectId, edges, setEdges])
+
+  const handleUpdateCharacterDescription = async () => {
+    if (!selectedNodeId || !selectedProjectId) return
+
+    const node = nodes.find(n => n.id === selectedNodeId)
+    if (!node || !node.data.characterId) return
+
+    try {
+      setSaving(true)
+      await updateCharacter(selectedProjectId, node.data.characterId, {
+        description: editedDescription,
+      })
+
+      // Update the node in state
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === selectedNodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  description: editedDescription,
+                },
+              }
+            : n
+        )
+      )
+      setIsEditingDescription(false)
+      closeContextMenu()
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to update character')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUpdateCharacterName = async () => {
+    if (!selectedNodeId || !selectedProjectId || !editingName.trim()) return
+
+    const node = nodes.find(n => n.id === selectedNodeId)
+    if (!node || !node.data.characterId) return
+
+    try {
+      setSaving(true)
+      await updateCharacter(selectedProjectId, node.data.characterId, {
+        name: editingName.trim(),
+      })
+
+      // Update the node in state
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === selectedNodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  name: editingName.trim(),
+                },
+              }
+            : n
+        )
+      )
+      setShowEditNameModal(false)
+      setEditingName('')
+      closeContextMenu()
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to update character name')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUpdateCharacterColor = async (colorPreset: {
+    bg: string
+    border: string
+    text: string
+    icon: string
+  }) => {
+    if (!selectedNodeId || !selectedProjectId) return
+
+    const node = nodes.find(n => n.id === selectedNodeId)
+    if (!node || !node.data.characterId) return
+
+    try {
+      setSaving(true)
+      await updateCharacter(selectedProjectId, node.data.characterId, {
+        colors: colorPreset,
+      })
+
+      // Update the node in state
+      setNodes((nds) =>
+        nds.map((n) =>
+          n.id === selectedNodeId
+            ? {
+                ...n,
+                data: {
+                  ...n.data,
+                  bgColor: colorPreset.bg,
+                  borderColor: colorPreset.border,
+                  textColor: colorPreset.text,
+                  iconColor: colorPreset.icon,
+                },
+              }
+            : n
+        )
+      )
+      setShowEditColorModal(false)
+      closeContextMenu()
+    } catch (err) {
+      const apiError = err as ApiError
+      setError(apiError.message || 'Failed to update character color')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Preset color schemes
+  const colorPresets = [
+    {
+      name: 'Blue',
+      bg: 'bg-blue-100',
+      border: 'border-blue-200',
+      text: 'text-gray-dark',
+      icon: 'text-blue-600',
     },
-    [setEdges]
-  )
+    {
+      name: 'Purple',
+      bg: 'bg-purple-100',
+      border: 'border-purple-200',
+      text: 'text-gray-dark',
+      icon: 'text-purple-600',
+    },
+    {
+      name: 'Pink',
+      bg: 'bg-pink-100',
+      border: 'border-primary',
+      text: 'text-gray-dark',
+      icon: 'text-primary',
+    },
+    {
+      name: 'Green',
+      bg: 'bg-green-100',
+      border: 'border-green-200',
+      text: 'text-gray-dark',
+      icon: 'text-green-600',
+    },
+    {
+      name: 'Yellow',
+      bg: 'bg-yellow-100',
+      border: 'border-yellow-200',
+      text: 'text-gray-dark',
+      icon: 'text-yellow-600',
+    },
+    {
+      name: 'Red',
+      bg: 'bg-red-100',
+      border: 'border-red-200',
+      text: 'text-gray-dark',
+      icon: 'text-red-600',
+    },
+    {
+      name: 'Indigo',
+      bg: 'bg-indigo-100',
+      border: 'border-indigo-200',
+      text: 'text-gray-dark',
+      icon: 'text-indigo-600',
+    },
+    {
+      name: 'Teal',
+      bg: 'bg-teal-100',
+      border: 'border-teal-200',
+      text: 'text-gray-dark',
+      icon: 'text-teal-600',
+    },
+  ]
+
+  const selectedProject = projects.find(p => p.id === selectedProjectId)
 
   return (
     <div className="h-screen flex flex-col bg-white overflow-hidden">
@@ -487,18 +966,59 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
             </span>
           </div>
           
+          {/* Project Selector */}
+          <div className="flex items-center space-x-2">
+            <select
+              value={selectedProjectId || ''}
+              onChange={(e) => setSelectedProjectId(Number(e.target.value))}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              disabled={loading || saving}
+            >
+              {projects.map(project => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={handleCreateProject}
+              disabled={loading || saving}
+              className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
+            >
+              + New Project
+            </button>
+          </div>
+          
           {/* Breadcrumbs */}
           <div className="flex items-center space-x-2 text-sm text-gray">
             <span>World Overview</span>
             <span>/</span>
             <span>Characters</span>
+            {selectedNodeId && (
+              <>
             <span>/</span>
-            <span className="text-gray-dark font-medium">King Eldor</span>
+                <span className="text-gray-dark font-medium">
+                  {nodes.find(n => n.id === selectedNodeId)?.data.name || 'Character'}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
         {/* Header Icons */}
         <div className="flex items-center space-x-4">
+          {error && (
+            <div className="px-3 py-1.5 bg-red-100 text-red-700 rounded-lg text-sm">
+              {error}
+              <button onClick={() => setError(null)} className="ml-2">×</button>
+            </div>
+          )}
+          {loading && (
+            <div className="text-sm text-gray">Loading...</div>
+          )}
+          {saving && (
+            <div className="text-sm text-gray">Saving...</div>
+          )}
           <button className="p-2 hover:bg-gray-light rounded-lg transition-colors">
             <svg className="w-5 h-5 text-gray-dark" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
@@ -531,15 +1051,12 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center space-x-3 mb-2">
               <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-white font-semibold">
-                E
+                {selectedProject?.name?.[0]?.toUpperCase() || 'E'}
               </div>
               <div className="flex-1">
-                <div className="font-semibold text-gray-dark">Eldoria</div>
+                <div className="font-semibold text-gray-dark">{selectedProject?.name || 'No Project'}</div>
                 <div className="text-sm text-gray flex items-center">
-                  Book 1: Legend of Eldoria
-                  <svg className="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+                  {selectedProject?.description || 'Select a project'}
                 </div>
               </div>
             </div>
@@ -710,6 +1227,7 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                 onClick={() => setShowNewNodeModal(true)}
                 className="p-1 hover:bg-gray-light rounded text-primary"
                 title="Add new entity"
+                disabled={!selectedProjectId || saving}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -761,12 +1279,11 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                       <button
                         onClick={(e) => {
                           e.stopPropagation()
-                          if (confirm(`Are you sure you want to delete "${node.data.name}"? This will also remove all connections to this entity.`)) {
                             handleDeleteNode(node.id)
-                          }
                         }}
                         className="p-1 mr-2 opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600 transition-opacity"
                         title="Delete entity"
+                        disabled={saving}
                       >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -839,23 +1356,143 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
 
           {/* Graph Canvas */}
           <div className="flex-1 relative bg-gray-light">
+            {loading && nodes.length === 0 ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="text-gray">Loading characters...</div>
+              </div>
+            ) : (
             <ReactFlow
-              nodes={nodes.map(node => ({
-                ...node,
-                data: {
-                  ...node.data,
-                  isFocused: node.id === selectedNodeId,
+              nodes={nodes.map(node => {
+                // Hover takes precedence over selection
+                const highlightedNodeId = hoveredNodeId || selectedNodeId
+                const isHighlighted = node.id === highlightedNodeId
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    isFocused: node.id === selectedNodeId,
+                    isHighlighted,
+                  },
+                  connectable: true,
                 }
-              }))}
-              edges={edges}
+              })}
+              edges={edges.map(edge => {
+                // Highlight edges connected to the highlighted node (hover takes precedence)
+                const highlightedNodeId = hoveredNodeId || selectedNodeId
+                const isHighlighted = highlightedNodeId && (edge.source === highlightedNodeId || edge.target === highlightedNodeId)
+                return {
+                  ...edge,
+                  style: isHighlighted 
+                    ? { stroke: '#EC4899', strokeWidth: 3, opacity: 1 }
+                    : highlightedNodeId
+                    ? { stroke: '#5B21B6', strokeWidth: 2, opacity: 0.3 }
+                    : { stroke: '#5B21B6', strokeWidth: 2, opacity: 1 },
+                  markerEnd: {
+                    type: MarkerType.ArrowClosed,
+                    color: isHighlighted ? '#EC4899' : '#5B21B6',
+                  },
+                  labelStyle: { 
+                    fill: isHighlighted ? '#EC4899' : '#5B21B6', 
+                    fontWeight: isHighlighted ? 600 : 500, 
+                    fontSize: 12 
+                  },
+                }
+              })}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
+              onNodeMouseEnter={onNodeMouseEnter}
+              onNodeMouseLeave={onNodeMouseLeave}
+              onNodeDragStop={onNodeDragStop}
+              onNodeContextMenu={onNodeContextMenu}
+              onEdgeDoubleClick={onEdgeDoubleClick}
+              onInit={(instance) => {
+                reactFlowInstance.current = instance
+              }}
               nodeTypes={nodeTypes}
               fitView
               className="bg-gray-light"
               connectionLineStyle={{ stroke: '#5B21B6', strokeWidth: 2 }}
+              connectionRadius={20}
+              defaultEdgeOptions={{
+                type: 'smoothstep',
+                animated: false,
+              }}
+              isValidConnection={(connection) => {
+                console.log('isValidConnection check:', connection, 'edges:', edges.length)
+                // Prevent self-connections
+                if (connection.source === connection.target) {
+                  console.log('Rejected: self-connection')
+                  return false
+                }
+                // Prevent duplicate connections (same source and target, regardless of handles)
+                const existingEdge = edges.find(
+                  e => e.source === connection.source && 
+                       e.target === connection.target
+                )
+                if (existingEdge) {
+                  console.log('Rejected: duplicate connection', existingEdge)
+                  return false
+                }
+                console.log('Connection valid! Will call onConnect')
+                return true
+              }}
+              onConnectStart={(event, { nodeId, handleType, handleId }) => {
+                console.log('🔵 onConnectStart:', { nodeId, handleType, handleId, event })
+                setConnectionStart({ 
+                  nodeId: nodeId || '', 
+                  handleId: handleId || null
+                })
+              }}
+              onConnectEnd={(event) => {
+                console.log('🔴 onConnectEnd:', event)
+                console.log('🔴 onConnectEnd - target:', event.target)
+                
+                // If onConnect wasn't called, try to manually handle the connection
+                if (connectionStart && event.target) {
+                  const targetElement = event.target as HTMLElement
+                  // Try to find the node ID from the ReactFlow data attributes
+                  const reactFlowNode = targetElement.closest('.react-flow__node')
+                  const targetNodeId = reactFlowNode?.getAttribute('data-id') || 
+                                     targetElement.closest('[data-id]')?.getAttribute('data-id')
+                  
+                  // Get handle ID from the target element
+                  const targetHandleId = targetElement.getAttribute('data-handleid') || 
+                                       targetElement.getAttribute('id')
+                  
+                  console.log('🔴 Manual connection attempt:', { 
+                    source: connectionStart.nodeId, 
+                    target: targetNodeId,
+                    sourceHandle: connectionStart.handleId,
+                    targetHandle: targetHandleId,
+                    reactFlowNode: reactFlowNode?.className
+                  })
+                  
+                  if (targetNodeId && targetNodeId !== connectionStart.nodeId) {
+                    // Manually trigger onConnect
+                    const connection: Connection = {
+                      source: connectionStart.nodeId,
+                      target: targetNodeId,
+                      sourceHandle: connectionStart.handleId || undefined,
+                      targetHandle: (targetHandleId || undefined) as string | undefined,
+                    }
+                    console.log('🔴 Manually calling onConnect with:', connection)
+                    onConnect(connection)
+                  } else if (!targetNodeId && 'clientX' in event && 'clientY' in event && reactFlowInstance.current) {
+                    // If dropped on a blank spot, create a new node
+                    const mouseEvent = event as MouseEvent
+                    const flowPosition = reactFlowInstance.current.screenToFlowPosition({ x: mouseEvent.clientX, y: mouseEvent.clientY })
+                    console.log('🔵 Dropped on blank canvas, creating new node at:', flowPosition)
+                    setDraggedNodePosition(flowPosition)
+                    setShowNewNodeModal(true)
+                  } else {
+                    console.log('🔴 Connection failed - invalid target or self-connection')
+                  }
+                }
+                
+                setConnectionStart(null)
+              }}
               style={{
                 background: 'radial-gradient(circle, #e5e5e5 1px, transparent 1px)',
                 backgroundSize: '20px 20px',
@@ -874,11 +1511,13 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                 maskColor="rgba(0, 0, 0, 0.1)"
               />
             </ReactFlow>
+            )}
             
             {/* New Node Button */}
             <button 
               onClick={() => setShowNewNodeModal(true)}
-              className="absolute top-4 left-4 z-10 bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light transition-colors flex items-center space-x-2 shadow-sm"
+              disabled={!selectedProjectId || saving}
+              className="absolute top-4 left-4 z-10 bg-white border border-gray-200 rounded-lg px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light transition-colors flex items-center space-x-2 shadow-sm disabled:opacity-50"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -897,6 +1536,7 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                         setShowNewNodeModal(false)
                         setNewNodeName('')
                         setNewNodeDescription('')
+                        setDraggedNodePosition(null)
                       }}
                       className="p-1 hover:bg-gray-light rounded"
                     >
@@ -918,11 +1558,12 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                         placeholder="Enter entity name..."
                         className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && newNodeName.trim()) {
+                          if (e.key === 'Enter' && newNodeName.trim() && !saving) {
                             handleAddNode()
                           }
                         }}
                         autoFocus
+                        disabled={saving}
                       />
                     </div>
                     
@@ -936,24 +1577,391 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                         placeholder="Enter description (optional)..."
                         className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                         rows={3}
+                        disabled={saving}
                       />
                     </div>
                     
                     <div className="flex items-center space-x-2 pt-2">
                       <button
                         onClick={handleAddNode}
-                        disabled={!newNodeName.trim()}
+                        disabled={!newNodeName.trim() || saving}
                         className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        Create Entity
+                        {saving ? 'Creating...' : 'Create Entity'}
                       </button>
                       <button
                         onClick={() => {
                           setShowNewNodeModal(false)
                           setNewNodeName('')
                           setNewNodeDescription('')
+                          setDraggedNodePosition(null)
                         }}
                         className="px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Relationship Modal - When connecting nodes */}
+            {showRelationshipModal && pendingConnection && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-dark">Create Relationship</h3>
+                    <button
+                      onClick={() => {
+                        setShowRelationshipModal(false)
+                        setPendingConnection(null)
+                        setRelationshipLabel('')
+                      }}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm text-gray mb-2">
+                        Connecting:{' '}
+                        <span className="font-medium text-gray-dark">
+                          {nodes.find(n => n.id === pendingConnection.source)?.data.name}
+                        </span>
+                        {' → '}
+                        <span className="font-medium text-gray-dark">
+                          {nodes.find(n => n.id === pendingConnection.target)?.data.name}
+                        </span>
+                      </p>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-sm font-medium text-gray-dark mb-2">
+                        Relationship Label
+                      </label>
+                      <input
+                        type="text"
+                        value={relationshipLabel}
+                        onChange={(e) => setRelationshipLabel(e.target.value)}
+                        placeholder="e.g., father of, commands, allied with..."
+                        className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !saving) {
+                            handleCreateRelationship()
+                          }
+                        }}
+                        autoFocus
+                        disabled={saving}
+                      />
+                      <p className="text-xs text-gray mt-1">Leave empty for &quot;connected to&quot;</p>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 pt-2">
+                      <button
+                        onClick={handleCreateRelationship}
+                        disabled={saving}
+                        className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {saving ? 'Creating...' : 'Create Relationship'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowRelationshipModal(false)
+                          setPendingConnection(null)
+                          setRelationshipLabel('')
+                        }}
+                        className="px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edge Label Edit Modal - When double-clicking edge */}
+            {editingEdgeId && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-dark">Edit Relationship</h3>
+                    <button
+                      onClick={() => {
+                        setEditingEdgeId(null)
+                        setEditingEdgeLabel('')
+                      }}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-dark mb-2">
+                        Relationship Label
+                      </label>
+                      <input
+                        type="text"
+                        value={editingEdgeLabel}
+                        onChange={(e) => setEditingEdgeLabel(e.target.value)}
+                        placeholder="e.g., father of, commands, allied with..."
+                        className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !saving) {
+                            handleUpdateEdgeLabel()
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingEdgeId(null)
+                            setEditingEdgeLabel('')
+                          }
+                        }}
+                        autoFocus
+                        disabled={saving}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 pt-2">
+                      <button
+                        onClick={handleUpdateEdgeLabel}
+                        disabled={saving}
+                        className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingEdgeId(null)
+                          setEditingEdgeLabel('')
+                        }}
+                        className="px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Context Menu */}
+            {contextMenu.visible && contextMenu.nodeId && (
+              <div
+                className="fixed bg-white border border-gray-200 rounded-lg shadow-lg z-50 py-1 min-w-[180px]"
+                style={{
+                  left: contextMenu.x,
+                  top: contextMenu.y,
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    const node = nodes.find(n => n.id === contextMenu.nodeId)
+                    if (node) {
+                      setSelectedNodeId(node.id)
+                      setIsEditingDescription(false)
+                    }
+                    closeContextMenu()
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-dark hover:bg-gray-light flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                  <span>View Details</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const node = nodes.find(n => n.id === contextMenu.nodeId)
+                    if (node) {
+                      setEditingName(node.data.name)
+                      setShowEditNameModal(true)
+                    }
+                    closeContextMenu()
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-dark hover:bg-gray-light flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <span>Edit Name</span>
+                </button>
+                <button
+                  onClick={() => {
+                    const node = nodes.find(n => n.id === contextMenu.nodeId)
+                    if (node) {
+                      setSelectedNodeId(node.id)
+                      setEditedDescription(node.data.description)
+                      setIsEditingDescription(true)
+                    }
+                    closeContextMenu()
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-dark hover:bg-gray-light flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                  <span>Edit Description</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setShowEditColorModal(true)
+                    closeContextMenu()
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-dark hover:bg-gray-light flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                  </svg>
+                  <span>Change Color</span>
+                </button>
+                <div className="border-t border-gray-200 my-1"></div>
+                <button
+                  onClick={() => {
+                    const node = nodes.find(n => n.id === contextMenu.nodeId)
+                    if (node) {
+                      handleDeleteNode(node.id)
+                    }
+                    closeContextMenu()
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                  <span>Delete</span>
+                </button>
+              </div>
+            )}
+
+            {/* Edit Name Modal */}
+            {showEditNameModal && selectedNodeId && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-dark">Edit Name</h3>
+                    <button
+                      onClick={() => {
+                        setShowEditNameModal(false)
+                        setEditingName('')
+                      }}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-dark mb-2">
+                        Character Name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        placeholder="Enter character name..."
+                        className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editingName.trim() && !saving) {
+                            handleUpdateCharacterName()
+                          }
+                          if (e.key === 'Escape') {
+                            setShowEditNameModal(false)
+                            setEditingName('')
+                          }
+                        }}
+                        autoFocus
+                        disabled={saving}
+                      />
+                    </div>
+                    
+                    <div className="flex items-center space-x-2 pt-2">
+                      <button
+                        onClick={handleUpdateCharacterName}
+                        disabled={!editingName.trim() || saving}
+                        className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {saving ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowEditNameModal(false)
+                          setEditingName('')
+                        }}
+                        className="px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                        disabled={saving}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Color Modal */}
+            {showEditColorModal && selectedNodeId && (
+              <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-xl">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-dark">Change Color</h3>
+                    <button
+                      onClick={() => setShowEditColorModal(false)}
+                      className="p-1 hover:bg-gray-light rounded"
+                    >
+                      <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4">
+                    <p className="text-sm text-gray">Select a color scheme:</p>
+                    <div className="grid grid-cols-2 gap-3">
+                      {colorPresets.map((preset) => (
+                        <button
+                          key={preset.name}
+                          onClick={() => handleUpdateCharacterColor({
+                            bg: preset.bg,
+                            border: preset.border,
+                            text: preset.text,
+                            icon: preset.icon,
+                          })}
+                          disabled={saving}
+                          className={`p-4 rounded-lg border-2 transition-all hover:scale-105 ${preset.bg} ${preset.border} ${
+                            nodes.find(n => n.id === selectedNodeId)?.data.bgColor === preset.bg
+                              ? 'ring-2 ring-primary ring-offset-2'
+                              : ''
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-6 h-6 rounded-full ${preset.bg} ${preset.border} border-2`}></div>
+                            <span className={`font-medium ${preset.text}`}>{preset.name}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <div className="pt-2">
+                      <button
+                        onClick={() => setShowEditColorModal(false)}
+                        className="w-full px-4 py-2 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                        disabled={saving}
                       >
                         Cancel
                       </button>
@@ -1001,11 +2009,25 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                   
                   {/* Node Preview */}
                   <div className={`rounded-lg p-3 ${selectedNode.data.bgColor} ${selectedNode.data.borderColor} border`}>
-                    <div className="flex items-center space-x-2 mb-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center space-x-2 flex-1">
                       <svg className={`w-5 h-5 ${selectedNode.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                       </svg>
                       <h4 className="font-semibold text-gray-dark">{selectedNode.data.name}</h4>
+                      </div>
+                      <button
+                        onClick={() => {
+                          setEditingName(selectedNode.data.name)
+                          setShowEditNameModal(true)
+                        }}
+                        className="p-1 hover:bg-gray-light rounded transition-colors"
+                        title="Edit name"
+                      >
+                        <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                      </button>
                     </div>
                     <p className="text-xs text-gray line-clamp-3 overflow-hidden">{selectedNode.data.description}</p>
                   </div>
@@ -1017,6 +2039,20 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="text-sm font-semibold text-gray-dark">Description</h4>
+                      {!isEditingDescription && (
+                        <button
+                          onClick={() => {
+                            setEditedDescription(selectedNode.data.description)
+                            setIsEditingDescription(true)
+                          }}
+                          className="p-1 hover:bg-gray-light rounded transition-colors"
+                          title="Edit description"
+                        >
+                          <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      )}
                     </div>
                     {isEditingDescription ? (
                       <div className="space-y-2">
@@ -1026,29 +2062,15 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                           className="w-full bg-gray-light border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                           rows={4}
                           placeholder="Enter description..."
+                          disabled={saving}
                         />
                         <div className="flex items-center space-x-2">
                           <button
-                            onClick={() => {
-                              // Update the node's description
-                              setNodes((nds) =>
-                                nds.map((node) =>
-                                  node.id === selectedNodeId
-                                    ? {
-                                        ...node,
-                                        data: {
-                                          ...node.data,
-                                          description: editedDescription,
-                                        },
-                                      }
-                                    : node
-                                )
-                              )
-                              setIsEditingDescription(false)
-                            }}
-                            className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors"
+                            onClick={handleUpdateCharacterDescription}
+                            disabled={saving}
+                            className="px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors disabled:opacity-50"
                           >
-                            Save
+                            {saving ? 'Saving...' : 'Save'}
                           </button>
                           <button
                             onClick={() => {
@@ -1056,6 +2078,7 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                               setIsEditingDescription(false)
                             }}
                             className="px-3 py-1.5 border border-gray-200 text-gray-dark rounded-lg text-sm font-medium hover:bg-gray-light transition-colors"
+                            disabled={saving}
                           >
                             Cancel
                           </button>
@@ -1077,13 +2100,16 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                             (e.source === node.id && e.target === selectedNodeId)
                           )
                           return (
-                            <button
+                            <div
                               key={node.id}
+                              className="flex items-center justify-between p-2 rounded-lg border border-gray-200 hover:bg-gray-light transition-colors group"
+                            >
+                              <button
                               onClick={() => {
                                 setSelectedNodeId(node.id)
                                 setIsEditingDescription(false)
                               }}
-                              className="w-full text-left p-2 rounded-lg border border-gray-200 hover:bg-gray-light transition-colors"
+                                className="flex-1 text-left"
                             >
                               <div className="flex items-center space-x-2 mb-1">
                                 <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1095,6 +2121,55 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                                 <span className="text-xs text-gray">{edge.label}</span>
                               )}
                             </button>
+                              <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {edge && (
+                                  <>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        if (edge.id) {
+                                          setEditingEdgeId(edge.id)
+                                          setEditingEdgeLabel(edge.label as string || '')
+                                        }
+                                      }}
+                                      className="p-1.5 hover:bg-gray-200 rounded transition-colors"
+                                      title="Edit relationship"
+                                    >
+                                      <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={async (e) => {
+                                        e.stopPropagation()
+                                        if (edge.data?.relationshipId && selectedProjectId) {
+                                          if (confirm('Are you sure you want to delete this relationship?')) {
+                                            try {
+                                              setSaving(true)
+                                              await deleteRelationship(selectedProjectId, edge.data.relationshipId)
+                                              // Remove the edge from state
+                                              setEdges((eds) => eds.filter((e) => e.id !== edge.id))
+                                            } catch (err) {
+                                              const apiError = err as ApiError
+                                              setError(apiError.message || 'Failed to delete relationship')
+                                            } finally {
+                                              setSaving(false)
+                                            }
+                                          }
+                                        }
+                                      }}
+                                      className="p-1.5 hover:bg-red-100 rounded transition-colors"
+                                      title="Delete relationship"
+                                      disabled={saving}
+                                    >
+                                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                      </svg>
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
                           )
                         })}
                       </div>
@@ -1115,12 +2190,9 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
                           Edit Entity
                         </button>
                         <button
-                          onClick={() => {
-                            if (confirm(`Are you sure you want to delete "${selectedNode.data.name}"? This will also remove all connections to this entity.`)) {
-                              handleDeleteNode(selectedNodeId!)
-                            }
-                          }}
-                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors"
+                          onClick={() => handleDeleteNode(selectedNodeId)}
+                          disabled={saving}
+                          className="w-full px-4 py-2 bg-red-500 text-white rounded-lg text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
                         >
                           Delete Entity
                         </button>
@@ -1185,100 +2257,11 @@ Aris represents the soldier's burden in Eldoria's new age: steadfast, scarred, a
 
             {/* User Input */}
             <div className="text-sm text-gray-dark">
-              The king of Eldoria's father is King Arion, who was the king before him. He died 10 years before the Siege of Eldor. Add this to the world lore.
+                  The king of Eldoria&apos;s father is King Arion, who was the king before him. He died 10 years before the Siege of Eldor. Add this to the world lore.
             </div>
 
             {/* Status */}
             <div className="text-xs text-gray">Lore successfully updated.</div>
-
-            {/* Updates */}
-            <div className="space-y-3 border-t border-gray-200 pt-3">
-              <div>
-                <div className="text-xs text-gray mb-1">New node created:</div>
-                <div className="bg-gray-light rounded-lg px-3 py-2 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span className="text-sm font-medium text-gray-dark">King Arion (Character)</span>
-                  </div>
-                  <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                  </svg>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray mb-1">Relationships added:</div>
-                <div className="space-y-1 text-sm">
-                  <div className="text-gray-dark">
-                    <span className="text-primary font-medium">King Arion</span> → father of → <span className="text-primary font-medium">King Eldor</span>
-                  </div>
-                  <div className="text-gray-dark">
-                    <span className="text-primary font-medium">Death of King Arion</span> → happens before → <span className="text-primary font-medium">Siege of Eldor</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-xs text-gray mb-1">Timeline update:</div>
-                <div className="text-sm text-gray-dark">
-                  <span className="text-primary font-medium">Death of King Arion</span> placed 10 years before the <span className="text-primary font-medium">Siege of Eldor</span>.
-                </div>
-              </div>
-
-              <div className="border-t border-gray-200 pt-3">
-                <div className="text-xs font-semibold text-gray-dark mb-2">Summary:</div>
-                <div className="text-sm text-gray leading-relaxed">
-                  A new character node for King Arion has been added to your graph and linked to King Eldor and the Siege of Eldor.
-                </div>
-              </div>
-
-              <div className="flex space-x-2">
-                <button className="flex-1 bg-gray-light text-gray-dark px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                  <span>View New Nodes</span>
-                </button>
-                <button className="flex-1 bg-gray-light text-gray-dark px-3 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition-colors flex items-center justify-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>Open Timeline</span>
-                </button>
-              </div>
-
-              <button className="w-full text-primary text-sm font-medium hover:underline flex items-center space-x-1">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                <span>+ Refine Relationship</span>
-              </button>
-
-              <div className="border-t border-gray-200 pt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold text-gray-dark">Review Changes</span>
-                  <div className="flex items-center space-x-2">
-                    <button className="p-1 hover:bg-gray-light rounded">
-                      <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                      </svg>
-                    </button>
-                    <button className="p-1 hover:bg-gray-light rounded">
-                      <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6-6m6 6l-6 6" />
-                      </svg>
-                    </button>
-                    <button className="p-1 hover:bg-gray-light rounded">
-                      <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
 
               {/* Bottom Input */}
