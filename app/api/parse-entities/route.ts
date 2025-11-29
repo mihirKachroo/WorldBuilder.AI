@@ -19,11 +19,115 @@ interface Relationship {
 interface ParsedData {
   entities: Entity[]
   relationships: Relationship[]
+  answer?: string
+  isQuestion?: boolean
+}
+
+interface ExistingNode {
+  name: string
+  description: string
+}
+
+// Levenshtein distance for fuzzy string matching
+function levenshteinDistance(str1: string, str2: string): number {
+  const m = str1.length
+  const n = str2.length
+  const dp: number[][] = Array(m + 1)
+    .fill(null)
+    .map(() => Array(n + 1).fill(0))
+
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      if (str1[i - 1] === str2[j - 1]) {
+        dp[i][j] = dp[i - 1][j - 1]
+      } else {
+        dp[i][j] = Math.min(
+          dp[i - 1][j] + 1, // deletion
+          dp[i][j - 1] + 1, // insertion
+          dp[i - 1][j - 1] + 1 // substitution
+        )
+      }
+    }
+  }
+
+  return dp[m][n]
+}
+
+// Calculate similarity score (0-1, where 1 is identical)
+function stringSimilarity(str1: string, str2: string): number {
+  const maxLen = Math.max(str1.length, str2.length)
+  if (maxLen === 0) return 1
+  const distance = levenshteinDistance(str1.toLowerCase(), str2.toLowerCase())
+  return 1 - distance / maxLen
+}
+
+// Find best matching node name using fuzzy matching
+function findBestMatch(
+  query: string,
+  existingNodes: ExistingNode[],
+  threshold: number = 0.7
+): string | null {
+  let bestMatch: { name: string; score: number } | null = null
+
+  for (const node of existingNodes) {
+    const score = stringSimilarity(query.toLowerCase(), node.name.toLowerCase())
+    if (score >= threshold && (!bestMatch || score > bestMatch.score)) {
+      bestMatch = { name: node.name, score }
+    }
+  }
+
+  return bestMatch ? bestMatch.name : null
+}
+
+// Normalize entity names in relationships using fuzzy matching
+function normalizeEntityNames(
+  entities: Entity[],
+  relationships: Relationship[],
+  existingNodes: ExistingNode[]
+): { entities: Entity[]; relationships: Relationship[] } {
+  // First, normalize entity names
+  const normalizedEntities = entities.map((entity) => {
+    const match = findBestMatch(entity.name, existingNodes)
+    return {
+      ...entity,
+      name: match || entity.name,
+    }
+  })
+
+  // Then normalize relationship source/target names
+  const normalizedRelationships = relationships.map((rel) => {
+    const sourceMatch = findBestMatch(rel.source, existingNodes)
+    const targetMatch = findBestMatch(rel.target, existingNodes)
+    return {
+      ...rel,
+      source: sourceMatch || rel.source,
+      target: targetMatch || rel.target,
+    }
+  })
+
+  return {
+    entities: normalizedEntities,
+    relationships: normalizedRelationships,
+  }
 }
 
 export async function POST(request: Request) {
   try {
-    const { text } = await request.json()
+    let requestBody
+    try {
+      requestBody = await request.json()
+    } catch (parseError) {
+      console.error('Error parsing request body:', parseError)
+      return NextResponse.json(
+        { error: 'Invalid JSON in request body' },
+        { status: 400 }
+      )
+    }
+
+    const { text, existingNodes = [], documents = [] } = requestBody
 
     if (!text || typeof text !== 'string') {
       return NextResponse.json(
@@ -39,17 +143,73 @@ export async function POST(request: Request) {
       )
     }
 
-    const systemPrompt = `You are an assistant that extracts entities and relationships from natural language text about a fictional world.
+    // Validate and filter existing nodes
+    const validExistingNodes: ExistingNode[] = Array.isArray(existingNodes)
+      ? existingNodes
+          .filter((node: any) => node && typeof node === 'object' && node.name)
+          .map((node: any) => ({
+            name: String(node.name || ''),
+            description: String(node.description || ''),
+          }))
+      : []
 
-IMPORTANT RULES:
+    // Validate documents
+    const validDocuments: Array<{ name: string; content: string }> = Array.isArray(documents)
+      ? documents
+          .filter((doc: any) => doc && typeof doc === 'object' && doc.name && doc.content)
+          .map((doc: any) => ({
+            name: String(doc.name || ''),
+            content: String(doc.content || ''),
+          }))
+      : []
+
+    // Build context from existing nodes
+    const existingNodesContext =
+      validExistingNodes.length > 0
+        ? `\n\nEXISTING ENTITIES IN THE WORLD:\n${validExistingNodes
+            .map(
+              (node: ExistingNode) =>
+                `- ${node.name}: ${node.description || 'No description'}`
+            )
+            .join('\n')}`
+        : ''
+
+    // Build context from selected documents
+    const documentsContext =
+      validDocuments.length > 0
+        ? `\n\nDOCUMENTS PROVIDED BY USER:\n${validDocuments
+            .map(
+              (doc) =>
+                `--- Document: ${doc.name} ---\n${doc.content}\n--- End of ${doc.name} ---`
+            )
+            .join('\n\n')}`
+        : ''
+
+    const systemPrompt = `You are an assistant that helps users manage their fictional world. You can do two things:
+
+1. EXTRACT NEW ENTITIES AND RELATIONSHIPS from text that describes new information
+2. ANSWER QUESTIONS about existing entities in the world
+
+IMPORTANT RULES FOR EXTRACTION:
 1. Only extract information that is EXPLICITLY stated in the text. Do not infer or add details.
 2. For entity descriptions, only include facts directly mentioned in the text.
 3. If a relationship is mentioned, extract it with an appropriate label (e.g., "brother of", "exiled from", "duke of").
-4. Return a JSON object with "entities" (array of {name, description}) and "relationships" (array of {source, target, label}).
-5. Use the exact names as they appear in the text.
-6. If an entity is mentioned but no description is given, use an empty string for description.
+4. Use the exact names as they appear in the text (fuzzy matching will handle misspellings).
+5. If an entity is mentioned but no description is given, use an empty string for description.
+6. If an entity name in the text is a misspelling of an existing entity, still use the name as written - normalization happens separately.
 
-Example:
+IMPORTANT RULES FOR QUESTIONS:
+1. If the user is asking a question (e.g., "Who is...?", "What is...?", "Tell me about..."), provide an answer in the "answer" field.
+2. Use information from existing entities to answer questions.
+3. If the question mentions an entity name that might be misspelled, try to match it to existing entities.
+4. If you cannot find information to answer the question, say so clearly.
+
+RESPONSE FORMAT:
+- If extracting entities: Return JSON with "entities" (array of {name, description}) and "relationships" (array of {source, target, label}).
+- If answering a question: Return JSON with "answer" (string) and "isQuestion": true.
+- If both: Include all fields.
+
+Example extraction:
 Input: "King Eldor's brother is Draco Arion, the Duke of Anverda, who was exiled from Eldoria due to suspected treason."
 Output: {
   "entities": [
@@ -58,7 +218,18 @@ Output: {
   "relationships": [
     {"source": "King Eldor", "target": "Draco Arion", "label": "brother of"}
   ]
-}`
+}
+
+Example question:
+Input: "Who is the king of Eldoria?"
+Output: {
+  "answer": "The current king of Eldoria is King Eldor. He rules from Eldoria Castle and is a member of the Order of the Flame.",
+  "isQuestion": true,
+  "entities": [],
+  "relationships": []
+}
+
+IMPORTANT: If documents are provided, extract entities and relationships from them. The user may ask questions about the documents or want you to process them to add new information to the world.${existingNodesContext}${documentsContext}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -78,21 +249,51 @@ Output: {
       )
     }
 
-    const parsedData: ParsedData = JSON.parse(responseContent)
-
-    // Validate the response structure
-    if (!Array.isArray(parsedData.entities) || !Array.isArray(parsedData.relationships)) {
+    let parsedData: any
+    try {
+      parsedData = JSON.parse(responseContent)
+    } catch (parseError) {
+      console.error('Error parsing OpenAI response:', parseError)
+      console.error('Response content:', responseContent)
       return NextResponse.json(
-        { error: 'Invalid response format from OpenAI' },
+        { error: 'Invalid JSON response from OpenAI', details: responseContent.substring(0, 200) },
         { status: 500 }
       )
     }
 
-    return NextResponse.json(parsedData)
+    // Normalize the response structure - ensure entities and relationships are arrays
+    const normalizedData: ParsedData = {
+      entities: Array.isArray(parsedData.entities) ? parsedData.entities : [],
+      relationships: Array.isArray(parsedData.relationships) ? parsedData.relationships : [],
+      answer: parsedData.answer || undefined,
+      isQuestion: parsedData.isQuestion || false,
+    }
+
+    // Log the response for debugging
+    console.log('OpenAI response:', JSON.stringify(normalizedData, null, 2))
+
+    // Normalize entity names using fuzzy matching if we have existing nodes
+    if (validExistingNodes.length > 0 && normalizedData.entities.length > 0) {
+      const normalized = normalizeEntityNames(
+        normalizedData.entities,
+        normalizedData.relationships,
+        validExistingNodes
+      )
+      normalizedData.entities = normalized.entities
+      normalizedData.relationships = normalized.relationships
+    }
+
+    return NextResponse.json(normalizedData)
   } catch (error) {
     console.error('Error parsing entities:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorStack = error instanceof Error ? error.stack : undefined
+    console.error('Error details:', { errorMessage, errorStack })
     return NextResponse.json(
-      { error: 'Failed to parse entities' },
+      { 
+        error: 'Failed to parse entities',
+        details: errorMessage 
+      },
       { status: 500 }
     )
   }

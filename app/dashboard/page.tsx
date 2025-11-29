@@ -169,7 +169,7 @@ export default function DashboardPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [openFile, setOpenFile] = useState<{ path: string; name: string; content: string } | null>(null)
   const [loadingFile, setLoadingFile] = useState(false)
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; references?: string[] }>>([
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; references?: string[]; documents?: Array<{ name: string; path: string }> }>>([
     { role: 'user', content: 'Who is the king of Eldoria?' },
     { role: 'assistant', content: 'The current king of Eldoria is King Eldor. He rules from Eldoria Castle and is a member of the Order of the Flame.\n\nWould you like a follow up on how he became king?' },
   ])
@@ -177,6 +177,14 @@ export default function DashboardPage() {
   const [isProcessingChat, setIsProcessingChat] = useState(false)
   const chatMessagesEndRef = useRef<HTMLDivElement>(null)
   const chatInputRef = useRef<HTMLTextAreaElement>(null)
+  const [mentionState, setMentionState] = useState<{
+    isActive: boolean
+    query: string
+    position: number
+    selectedIndex: number
+  } | null>(null)
+  const mentionDropdownRef = useRef<HTMLDivElement>(null)
+  const [selectedDocuments, setSelectedDocuments] = useState<Array<{ path: string; name: string }>>([])
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
   const [isEditingDescription, setIsEditingDescription] = useState(false)
@@ -709,6 +717,94 @@ export default function DashboardPage() {
       )
     }
   }
+  // Render assistant message with clickable entity names
+  const renderAssistantMessage = (content: string) => {
+    if (!content) return null
+
+    // Get all character names, sorted by length (longest first) to match full names before partial matches
+    const characterNames = nodes
+      .map(node => node.data.name)
+      .filter(name => name && name.trim())
+      .sort((a, b) => b.length - a.length)
+
+    if (characterNames.length === 0) {
+      return <p className="text-sm text-gray-dark leading-relaxed whitespace-pre-wrap">{content}</p>
+    }
+
+    const lines = content.split('\n')
+    let globalKeyIndex = 0
+
+    return (
+      <div className="text-sm text-gray-dark leading-relaxed whitespace-pre-wrap">
+        {lines.map((line, lineIndex) => {
+          // Create a regex pattern that matches character names
+          const namePattern = new RegExp(
+            `\\b(${characterNames.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\b`,
+            'gi'
+          )
+
+          const parts: (string | React.ReactElement)[] = []
+          let lastIndex = 0
+          let match: RegExpExecArray | null
+
+          // Reset regex lastIndex
+          namePattern.lastIndex = 0
+
+          while ((match = namePattern.exec(line)) !== null) {
+            // Add text before the match
+            if (match.index > lastIndex) {
+              parts.push(line.substring(lastIndex, match.index))
+            }
+
+            // Find the matching node
+            const matchedName = match[0]
+            const matchedNode = nodes.find(node => 
+              node.data.name.toLowerCase() === matchedName.toLowerCase()
+            )
+
+            if (matchedNode) {
+              // Create clickable link for the entity name
+              parts.push(
+                <button
+                  key={`entity-link-${globalKeyIndex++}-${lineIndex}-${match.index}`}
+                  onClick={() => {
+                    setSelectedNodeId(matchedNode.id)
+                    setIsEditingDescription(false)
+                  }}
+                  className="text-primary font-medium hover:underline cursor-pointer"
+                >
+                  {matchedName}
+                </button>
+              )
+            } else {
+              // Just add the text if not found
+              parts.push(matchedName)
+            }
+
+            lastIndex = match.index + match[0].length
+          }
+
+          // Add remaining text
+          if (lastIndex < line.length) {
+            parts.push(line.substring(lastIndex))
+          }
+
+          // If no matches, return the original line
+          if (parts.length === 0) {
+            parts.push(line)
+          }
+
+          return (
+            <span key={`line-${lineIndex}`}>
+              {parts}
+              {lineIndex < lines.length - 1 && <br />}
+            </span>
+          )
+        })}
+      </div>
+    )
+  }
+
   const renderDescriptionWithLinks = (description: string) => {
     if (!description) return null
 
@@ -1275,31 +1371,75 @@ export default function DashboardPage() {
     if (!chatInput.trim() || !selectedProjectId || isProcessingChat) return
 
     const userMessage = chatInput.trim()
+    const documentsToProcess = [...selectedDocuments]
+    
+    // Clear input and selected documents
     setChatInput('')
+    setSelectedDocuments([])
     
     // Reset textarea height
     if (chatInputRef.current) {
       chatInputRef.current.style.height = 'auto'
     }
     
-    // Add user message to chat
-    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    // Add user message to chat with documents
+    setChatMessages(prev => [...prev, { 
+      role: 'user', 
+      content: userMessage,
+      documents: documentsToProcess.length > 0 ? documentsToProcess : undefined
+    }])
     setIsProcessingChat(true)
 
     try {
-      // Call the parse-entities API
+      // Load content of selected documents
+      const documentContents: Array<{ name: string; content: string }> = []
+      for (const doc of documentsToProcess) {
+        try {
+          const response = await fetch(`/api/documents?path=${encodeURIComponent(doc.path)}`)
+          if (response.ok) {
+            const data = await response.json()
+            documentContents.push({ name: doc.name, content: data.content })
+          }
+        } catch (err) {
+          console.error(`Failed to load document ${doc.name}:`, err)
+        }
+      }
+
+      // Prepare existing nodes for RAG context
+      const existingNodes = nodes.map((node) => ({
+        name: node.data.name,
+        description: node.data.description || '',
+      }))
+
+      // Call the parse-entities API with existing nodes and document content for RAG
       const response = await fetch('/api/parse-entities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: userMessage }),
+        body: JSON.stringify({ 
+          text: userMessage,
+          existingNodes: existingNodes,
+          documents: documentContents,
+        }),
       })
 
       if (!response.ok) {
-        throw new Error('Failed to parse entities')
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.details || errorData.error || 'Failed to parse entities'
+        console.error('API Error:', errorMessage, errorData)
+        throw new Error(errorMessage)
       }
 
       const data = await response.json()
-      const { entities, relationships } = data
+      const { entities, relationships, answer, isQuestion } = data
+
+      // If this is a question, use the answer directly
+      if (isQuestion && answer) {
+        setChatMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: answer,
+        }])
+        return
+      }
 
       // Create nodes for new entities
       const createdNodes: Node<CharacterNodeData>[] = []
@@ -1493,18 +1633,23 @@ export default function DashboardPage() {
         .filter((id): id is string => !!id)
 
       // Generate AI response
-      const entityNames = entities.map((e: { name: string; description: string }) => e.name).join(', ')
-      const relationshipCount = relationships.length
-      let aiResponse = ''
+      // If there's an answer from the API, use it (for mixed questions/extractions)
+      let aiResponse = answer || ''
       
-      if (entities.length > 0 && relationshipCount > 0) {
-        aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) and ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
-      } else if (entities.length > 0) {
-        aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) to your world.`
-      } else if (relationshipCount > 0) {
-        aiResponse = `I've added ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
-      } else {
-        aiResponse = 'I couldn\'t extract any entities or relationships from that message. Could you provide more details?'
+      if (!answer) {
+        // Generate response for entity/relationship extraction
+        const entityNames = entities.map((e: { name: string; description: string }) => e.name).join(', ')
+        const relationshipCount = relationships.length
+        
+        if (entities.length > 0 && relationshipCount > 0) {
+          aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) and ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+        } else if (entities.length > 0) {
+          aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) to your world.`
+        } else if (relationshipCount > 0) {
+          aiResponse = `I've added ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+        } else {
+          aiResponse = 'I couldn\'t extract any entities or relationships from that message. Could you provide more details?'
+        }
       }
 
       setChatMessages(prev => [...prev, { 
@@ -1523,10 +1668,113 @@ export default function DashboardPage() {
     }
   }, [chatInput, selectedProjectId, isProcessingChat, nodes, edges, setNodes, setEdges, calculateOptimalHandles])
 
+  // Get all files (not directories) from document tree recursively
+  const getAllFiles = (items: DocumentItem[]): DocumentItem[] => {
+    const files: DocumentItem[] = []
+    const traverse = (items: DocumentItem[]) => {
+      for (const item of items) {
+        if (item.type === 'file') {
+          files.push(item)
+        }
+        if (item.children) {
+          traverse(item.children)
+        }
+      }
+    }
+    traverse(items)
+    return files
+  }
+
+  // Filter files based on query (case-insensitive)
+  const getFilteredFiles = useCallback((query: string): DocumentItem[] => {
+    const allFiles = getAllFiles(documents)
+    if (!query) return allFiles
+    const lowerQuery = query.toLowerCase()
+    return allFiles.filter(file => 
+      file.name.toLowerCase().includes(lowerQuery)
+    )
+  }, [documents])
+
+  // Handle @ mention detection and insertion
+  const handleChatInputChange = useCallback((value: string) => {
+    setChatInput(value)
+    
+    // Find @ mention position
+    const cursorPos = chatInputRef.current?.selectionStart || value.length
+    const textBeforeCursor = value.substring(0, cursorPos)
+    const lastAtIndex = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtIndex !== -1) {
+      // Check if there's a space after @ (which would mean @ is not active)
+      const textAfterAt = textBeforeCursor.substring(lastAtIndex + 1)
+      if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
+        const query = textAfterAt
+        setMentionState({
+          isActive: true,
+          query,
+          position: lastAtIndex,
+          selectedIndex: 0,
+        })
+        return
+      }
+    }
+    
+    // Close mention if @ is not active
+    if (mentionState?.isActive) {
+      setMentionState(null)
+    }
+  }, [mentionState, documents])
+
+  // Insert mention and add to selected documents
+  const insertMention = useCallback((file: DocumentItem) => {
+    if (!mentionState || !chatInputRef.current) return
+    
+    // Check if document is already selected
+    const isAlreadySelected = selectedDocuments.some(doc => doc.path === file.path)
+    if (isAlreadySelected) {
+      // Just close the dropdown and remove the @ mention
+      const textBefore = chatInput.substring(0, mentionState.position)
+      const textAfter = chatInput.substring(mentionState.position + 1 + mentionState.query.length)
+      setChatInput(textBefore + textAfter)
+      setMentionState(null)
+      return
+    }
+    
+    // Add to selected documents
+    setSelectedDocuments(prev => [...prev, { path: file.path, name: file.name }])
+    
+    // Remove the @ mention from text (we'll show it as a chip instead)
+    const textBefore = chatInput.substring(0, mentionState.position)
+    const textAfter = chatInput.substring(mentionState.position + 1 + mentionState.query.length)
+    setChatInput(textBefore + textAfter)
+    setMentionState(null)
+    
+    // Set cursor position
+    setTimeout(() => {
+      if (chatInputRef.current) {
+        const newCursorPos = textBefore.length
+        chatInputRef.current.setSelectionRange(newCursorPos, newCursorPos)
+        chatInputRef.current.focus()
+      }
+    }, 0)
+  }, [mentionState, chatInput, selectedDocuments])
+
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatMessages, isProcessingChat])
+
+  // Scroll selected mention item into view
+  useEffect(() => {
+    if (mentionState?.isActive && mentionDropdownRef.current) {
+      const selectedElement = mentionDropdownRef.current.querySelector(
+        `button:nth-child(${mentionState.selectedIndex + 1})`
+      )
+      if (selectedElement) {
+        selectedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+      }
+    }
+  }, [mentionState?.selectedIndex, mentionState?.isActive])
 
   // Auto-resize textarea
   useEffect(() => {
@@ -3019,10 +3267,25 @@ export default function DashboardPage() {
                       {message.role === 'user' ? (
                         <div className="bg-primary/10 border border-primary/30 rounded-lg px-4 py-2">
                           <p className="text-sm text-gray-dark leading-relaxed text-left">{message.content}</p>
+                          {message.documents && message.documents.length > 0 && (
+                            <div className="mt-2 pt-2 border-t border-primary/20 flex flex-wrap gap-2">
+                              {message.documents.map((doc) => (
+                                <div
+                                  key={doc.path}
+                                  className="flex items-center gap-1.5 px-2 py-1 bg-primary/20 border border-primary/40 rounded text-xs"
+                                >
+                                  <svg className="w-3 h-3 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                  </svg>
+                                  <span className="text-primary font-medium">{doc.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div className="px-4 py-2.5">
-                          <p className="text-sm text-gray-dark leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                          {renderAssistantMessage(message.content)}
                           {message.references && message.references.length > 0 && (
                             <div className="mt-3 pt-3 border-t border-gray-200">
                               <div className="flex flex-wrap gap-x-3 gap-y-1">
@@ -3039,38 +3302,102 @@ export default function DashboardPage() {
                                       className="flex items-center gap-1.5 text-sm text-primary underline decoration-primary/50 decoration-1 hover:decoration-primary hover:decoration-2 transition-all cursor-pointer"
                                     >
                                       <svg className={`w-3.5 h-3.5 ${node.data.iconColor || 'text-primary'} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                      </svg>
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
                                       <span>{node.data.name}</span>
                                     </button>
                                   )
                                 })}
-              </div>
-              </div>
+                  </div>
+                </div>
                           )}
-            </div>
+              </div>
                       )}
-            </div>
+                  </div>
                   ))}
                   {isProcessingChat && (
                     <div className="w-full">
                       <div className="px-4 py-2.5">
                         <p className="text-sm text-gray">Processing...</p>
-            </div>
                   </div>
+                </div>
                   )}
                   <div ref={chatMessagesEndRef} />
-            </div>
-          </div>
+                </div>
+              </div>
 
               {/* Bottom Input */}
               <div className="border-t border-gray-200 p-4 flex-shrink-0">
-                <div className="relative">
-                  <textarea
+                <div className="relative flex flex-col gap-2">
+                  {/* Selected Documents - Inline with input */}
+                  {selectedDocuments.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedDocuments.map((doc) => (
+                        <div
+                          key={doc.path}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 border border-primary/30 rounded-md text-sm"
+                        >
+                          <svg className="w-3.5 h-3.5 text-primary flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-primary font-medium">{doc.name}</span>
+                          <button
+                            onClick={() => {
+                              setSelectedDocuments(prev => prev.filter(d => d.path !== doc.path))
+                            }}
+                            className="ml-1 p-0.5 hover:bg-primary/20 rounded transition-colors"
+                          >
+                            <svg className="w-3.5 h-3.5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="relative">
+                    <textarea
                     ref={chatInputRef}
                     value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
+                    onChange={(e) => handleChatInputChange(e.target.value)}
                     onKeyDown={(e) => {
+                      if (mentionState?.isActive) {
+                        const filteredFiles = getFilteredFiles(mentionState.query)
+                        
+                        if (e.key === 'ArrowDown') {
+                          e.preventDefault()
+                          setMentionState(prev => prev ? {
+                            ...prev,
+                            selectedIndex: Math.min(prev.selectedIndex + 1, filteredFiles.length - 1)
+                          } : null)
+                          return
+                        }
+                        
+                        if (e.key === 'ArrowUp') {
+                          e.preventDefault()
+                          setMentionState(prev => prev ? {
+                            ...prev,
+                            selectedIndex: Math.max(prev.selectedIndex - 1, 0)
+                          } : null)
+                          return
+                        }
+                        
+                        if (e.key === 'Enter' || e.key === 'Tab') {
+                          e.preventDefault()
+                          if (filteredFiles.length > 0) {
+                            const selectedFile = filteredFiles[mentionState.selectedIndex] || filteredFiles[0]
+                            insertMention(selectedFile)
+                          }
+                          return
+                        }
+                        
+                        if (e.key === 'Escape') {
+                          e.preventDefault()
+                          setMentionState(null)
+                          return
+                        }
+                      }
+                      
                       if (e.key === 'Enter' && !e.shiftKey) {
                         e.preventDefault()
                         handleSendChatMessage()
@@ -3091,6 +3418,45 @@ export default function DashboardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                   </button>
+                  </div>
+                  
+                  {/* Mention Dropdown */}
+                  {mentionState?.isActive && (
+                    <div
+                      ref={mentionDropdownRef}
+                      className="absolute bottom-full left-0 mb-2 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto z-50"
+                    >
+                      {(() => {
+                        const filteredFiles = getFilteredFiles(mentionState.query)
+                        if (filteredFiles.length === 0) {
+                          return (
+                            <div className="px-4 py-2 text-sm text-gray">
+                              No documents found
+                            </div>
+                          )
+                        }
+                        return filteredFiles.map((file, index) => (
+                          <button
+                            key={file.path}
+                            onClick={() => insertMention(file)}
+                            className={`w-full text-left px-4 py-2 text-sm hover:bg-gray-light transition-colors ${
+                              index === mentionState.selectedIndex ? 'bg-gray-light' : ''
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <svg className="w-4 h-4 text-gray flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              </svg>
+                              <span className="text-gray-dark">{file.name}</span>
+                              {selectedDocuments.some(d => d.path === file.path) && (
+                                <span className="text-xs text-primary">(selected)</span>
+                              )}
+                            </div>
+                          </button>
+                        ))
+                      })()}
+                    </div>
+                  )}
                 </div>
               </div>
             </>
