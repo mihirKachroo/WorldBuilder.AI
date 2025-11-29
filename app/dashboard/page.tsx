@@ -169,6 +169,14 @@ export default function DashboardPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [openFile, setOpenFile] = useState<{ path: string; name: string; content: string } | null>(null)
   const [loadingFile, setLoadingFile] = useState(false)
+  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; references?: string[] }>>([
+    { role: 'user', content: 'Who is the king of Eldoria?' },
+    { role: 'assistant', content: 'The current king of Eldoria is King Eldor. He rules from Eldoria Castle and is a member of the Order of the Flame.\n\nWould you like a follow up on how he became king?' },
+  ])
+  const [chatInput, setChatInput] = useState('')
+  const [isProcessingChat, setIsProcessingChat] = useState(false)
+  const chatMessagesEndRef = useRef<HTMLDivElement>(null)
+  const chatInputRef = useRef<HTMLTextAreaElement>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
   const [isEditingDescription, setIsEditingDescription] = useState(false)
@@ -1081,18 +1089,18 @@ export default function DashboardPage() {
         target: pendingConnection.target!,
         sourceHandle: sourceHandle || undefined,
         targetHandle: targetHandle || undefined,
-        type: 'smoothstep',
+      type: 'smoothstep',
         pathOptions: {
           borderRadius: 20,
         },
         label: newRelationship.label || 'connected to',
-        style: { stroke: '#5B21B6', strokeWidth: 2 },
-        markerEnd: {
-          type: MarkerType.ArrowClosed,
-          color: '#5B21B6',
-        },
-        labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
-        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+      style: { stroke: '#5B21B6', strokeWidth: 2 },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: '#5B21B6',
+      },
+      labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
+      labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
         data: { relationshipId: newRelationship.id },
       }
       
@@ -1262,6 +1270,278 @@ export default function DashboardPage() {
       setSaving(false)
     }
   }
+
+  const handleSendChatMessage = useCallback(async () => {
+    if (!chatInput.trim() || !selectedProjectId || isProcessingChat) return
+
+    const userMessage = chatInput.trim()
+    setChatInput('')
+    
+    // Reset textarea height
+    if (chatInputRef.current) {
+      chatInputRef.current.style.height = 'auto'
+    }
+    
+    // Add user message to chat
+    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    setIsProcessingChat(true)
+
+    try {
+      // Call the parse-entities API
+      const response = await fetch('/api/parse-entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: userMessage }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to parse entities')
+      }
+
+      const data = await response.json()
+      const { entities, relationships } = data
+
+      // Create nodes for new entities
+      const createdNodes: Node<CharacterNodeData>[] = []
+      for (const entity of entities) {
+        // Check if node already exists
+        const existingNode = nodes.find(n => 
+          n.data.name.toLowerCase() === entity.name.toLowerCase()
+        )
+        
+        if (!existingNode) {
+          try {
+            const position = { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 }
+            const newCharacter = await createCharacter(selectedProjectId, {
+              name: entity.name,
+              description: entity.description || '',
+              position,
+              colors: {
+                bg: 'bg-blue-100',
+                border: 'border-blue-200',
+                text: 'text-gray-dark',
+                icon: 'text-blue-600',
+              },
+            })
+    
+    const newNode: Node<CharacterNodeData> = {
+              id: `char-${newCharacter.id}`,
+      type: 'character',
+              position: newCharacter.position || position,
+      data: {
+                name: newCharacter.name,
+                description: newCharacter.description || '',
+                bgColor: newCharacter.colors?.bg || 'bg-blue-100',
+                borderColor: newCharacter.colors?.border || 'border-blue-200',
+                textColor: newCharacter.colors?.text || 'text-gray-dark',
+                iconColor: newCharacter.colors?.icon || 'text-blue-600',
+                characterId: newCharacter.id,
+              },
+            }
+            
+            createdNodes.push(newNode)
+    setNodes((nds) => [...nds, newNode])
+          } catch (err) {
+            console.error('Failed to create entity:', err)
+          }
+        } else {
+          // Update existing node description if new information is provided
+          if (entity.description && entity.description.trim()) {
+            const updatedDescription = existingNode.data.description 
+              ? `${existingNode.data.description}\n\n${entity.description}`
+              : entity.description
+            
+            try {
+              await updateCharacter(selectedProjectId, existingNode.data.characterId!, {
+                description: updatedDescription,
+              })
+              
+              setNodes((nds) =>
+                nds.map((n) =>
+                  n.id === existingNode.id
+                    ? {
+                        ...n,
+                        data: {
+                          ...n.data,
+                          description: updatedDescription,
+                        },
+                      }
+                    : n
+                )
+              )
+            } catch (err) {
+              console.error('Failed to update entity:', err)
+            }
+          }
+        }
+      }
+
+      // Create relationships
+      // First, collect all entity names mentioned in relationships
+      const relationshipEntityNames = new Set<string>()
+      relationships.forEach((rel: { source: string; target: string; label: string }) => {
+        relationshipEntityNames.add(rel.source)
+        relationshipEntityNames.add(rel.target)
+      })
+
+      // Create missing entities that are only mentioned in relationships
+      for (const entityName of Array.from(relationshipEntityNames)) {
+        const existsInEntities = entities.some((e: { name: string; description: string }) => e.name.toLowerCase() === entityName.toLowerCase())
+        const existsInNodes = nodes.some(n => n.data.name.toLowerCase() === entityName.toLowerCase())
+        const existsInCreated = createdNodes.some(n => n.data.name.toLowerCase() === entityName.toLowerCase())
+        
+        if (!existsInEntities && !existsInNodes && !existsInCreated) {
+          // Create a minimal entity for this relationship reference
+          try {
+            const position = { x: Math.random() * 400 + 200, y: Math.random() * 400 + 100 }
+            const newCharacter = await createCharacter(selectedProjectId, {
+              name: entityName,
+              description: '',
+              position,
+              colors: {
+                bg: 'bg-blue-100',
+                border: 'border-blue-200',
+                text: 'text-gray-dark',
+                icon: 'text-blue-600',
+              },
+            })
+
+            const newNode: Node<CharacterNodeData> = {
+              id: `char-${newCharacter.id}`,
+              type: 'character',
+              position: newCharacter.position || position,
+              data: {
+                name: newCharacter.name,
+                description: newCharacter.description || '',
+                bgColor: newCharacter.colors?.bg || 'bg-blue-100',
+                borderColor: newCharacter.colors?.border || 'border-blue-200',
+                textColor: newCharacter.colors?.text || 'text-gray-dark',
+                iconColor: newCharacter.colors?.icon || 'text-blue-600',
+                characterId: newCharacter.id,
+              },
+            }
+            
+            createdNodes.push(newNode)
+            setNodes((nds) => [...nds, newNode])
+          } catch (err) {
+            console.error('Failed to create entity for relationship:', err)
+          }
+        }
+      }
+
+      // Now create relationships with all nodes available
+      for (const rel of relationships) {
+        // Find source and target nodes (check all possible locations)
+        const allNodes = [...nodes, ...createdNodes]
+        const sourceNode = allNodes.find(n => 
+          n.data.name.toLowerCase() === rel.source.toLowerCase()
+        )
+        
+        const targetNode = allNodes.find(n => 
+          n.data.name.toLowerCase() === rel.target.toLowerCase()
+        )
+
+        if (sourceNode && targetNode && sourceNode.data.characterId && targetNode.data.characterId) {
+          // Check if relationship already exists
+          const existingEdge = edges.find(
+            e => e.source === sourceNode.id && e.target === targetNode.id
+          )
+
+          if (!existingEdge) {
+            try {
+              const newRelationship = await createRelationship(selectedProjectId, {
+                source_character_id: sourceNode.data.characterId,
+                target_character_id: targetNode.data.characterId,
+                label: rel.label || 'connected to',
+              })
+
+              const { sourceHandle, targetHandle } = calculateOptimalHandles(sourceNode, targetNode)
+
+      const newEdge: Edge = {
+                id: `rel-${newRelationship.id}`,
+                source: sourceNode.id,
+                target: targetNode.id,
+                sourceHandle,
+                targetHandle,
+        type: 'smoothstep',
+                pathOptions: {
+                  borderRadius: 20,
+                },
+                label: newRelationship.label || 'connected to',
+        style: { stroke: '#5B21B6', strokeWidth: 2 },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: '#5B21B6',
+        },
+        labelStyle: { fill: '#5B21B6', fontWeight: 500, fontSize: 12 },
+        labelBgStyle: { fill: 'white', fillOpacity: 0.9 },
+                data: { relationshipId: newRelationship.id },
+      }
+              
+      setEdges((eds) => addEdge(newEdge, eds))
+            } catch (err) {
+              console.error('Failed to create relationship:', err)
+            }
+          }
+        }
+      }
+
+      // Collect all created node IDs (from entities and relationship references)
+      // All newly created nodes are in createdNodes array
+      const createdNodeIds: string[] = createdNodes
+        .map(node => node.id)
+        .filter((id): id is string => !!id)
+
+      // Generate AI response
+      const entityNames = entities.map((e: { name: string; description: string }) => e.name).join(', ')
+      const relationshipCount = relationships.length
+      let aiResponse = ''
+      
+      if (entities.length > 0 && relationshipCount > 0) {
+        aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) and ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+      } else if (entities.length > 0) {
+        aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) to your world.`
+      } else if (relationshipCount > 0) {
+        aiResponse = `I've added ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+      } else {
+        aiResponse = 'I couldn\'t extract any entities or relationships from that message. Could you provide more details?'
+      }
+
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: aiResponse,
+        references: createdNodeIds.length > 0 ? createdNodeIds : undefined
+      }])
+    } catch (err) {
+      console.error('Error processing chat message:', err)
+      setChatMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: 'Sorry, I encountered an error processing your message. Please try again.' 
+      }])
+    } finally {
+      setIsProcessingChat(false)
+    }
+  }, [chatInput, selectedProjectId, isProcessingChat, nodes, edges, setNodes, setEdges, calculateOptimalHandles])
+
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [chatMessages, isProcessingChat])
+
+  // Auto-resize textarea
+  useEffect(() => {
+    const textarea = chatInputRef.current
+    if (textarea) {
+      // Reset height to auto to get the correct scrollHeight
+      textarea.style.height = 'auto'
+      // Calculate the new height (min 2 rows, max ~6 rows which is ~120px)
+      const maxHeight = 120 // ~6 rows
+      const newHeight = Math.min(textarea.scrollHeight, maxHeight)
+      textarea.style.height = `${newHeight}px`
+      // Enable scrolling if content exceeds max height
+      textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden'
+    }
+  }, [chatInput])
 
   // Preset color schemes
   const colorPresets = [
@@ -2726,81 +3006,92 @@ export default function DashboardPage() {
             )
           })() : (
             <>
-              {/* Conversation Tabs */}
-              <div className="border-b border-gray-200 p-2 flex items-center space-x-1 overflow-x-auto">
-                <button
-                  onClick={() => setSelectedConversation('king-of-eldoria')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                    selectedConversation === 'king-of-eldoria'
-                      ? 'bg-gray-light text-gray-dark'
-                      : 'text-gray hover:bg-gray-light'
-                  }`}
-                >
-                  King of Eldoria recap
-                </button>
-                <button
-                  onClick={() => setSelectedConversation('magic-fundamentals')}
-                  className={`px-3 py-1.5 rounded text-xs font-medium whitespace-nowrap ${
-                    selectedConversation === 'magic-fundamentals'
-                      ? 'bg-gray-light text-gray-dark'
-                      : 'text-gray hover:bg-gray-light'
-                  }`}
-                >
-                  Magic fundamentals
-                </button>
-                <button className="p-1.5 hover:bg-gray-light rounded">
-                  <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                </button>
-                <button className="p-1.5 hover:bg-gray-light rounded">
-                  <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
+              {/* Chat Header */}
+              <div className="border-b border-gray-200 px-4 py-3 flex-shrink-0">
+                <h3 className="font-semibold text-gray-dark">World Lore Assistant</h3>
               </div>
 
-              {/* AI Content */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            {/* Query */}
-            <div>
-              <div className="font-medium text-gray-dark mb-2">Who is the king of Eldoria?</div>
-              <div className="text-sm text-gray leading-relaxed">
-                The current king of Eldoria is <span className="text-primary font-medium cursor-pointer hover:underline">King Eldor</span>. 
-                He rules from <span className="text-primary font-medium cursor-pointer hover:underline">Eldoria Castle</span> and is a member of 
-                the <span className="text-primary font-medium cursor-pointer hover:underline">Order of the Flame</span>.
+              {/* Chat Messages */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-4 space-y-4">
+                  {chatMessages.map((message, index) => (
+                    <div key={index} className="w-full">
+                      {message.role === 'user' ? (
+                        <div className="bg-primary/10 border border-primary/30 rounded-lg px-4 py-2">
+                          <p className="text-sm text-gray-dark leading-relaxed text-left">{message.content}</p>
+                        </div>
+                      ) : (
+                        <div className="px-4 py-2.5">
+                          <p className="text-sm text-gray-dark leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                          {message.references && message.references.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <div className="flex flex-wrap gap-x-3 gap-y-1">
+                                {message.references.map((nodeId) => {
+                                  const node = nodes.find(n => n.id === nodeId)
+                                  if (!node) return null
+                                  return (
+                                    <button
+                                      key={nodeId}
+                                      onClick={() => {
+                                        setSelectedNodeId(nodeId)
+                                        setIsEditingDescription(false)
+                                      }}
+                                      className="flex items-center gap-1.5 text-sm text-primary underline decoration-primary/50 decoration-1 hover:decoration-primary hover:decoration-2 transition-all cursor-pointer"
+                                    >
+                                      <svg className={`w-3.5 h-3.5 ${node.data.iconColor || 'text-primary'} flex-shrink-0`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                      </svg>
+                                      <span>{node.data.name}</span>
+                                    </button>
+                                  )
+                                })}
               </div>
+              </div>
+                          )}
             </div>
-
-            {/* Follow-up */}
-            <div className="text-sm text-primary cursor-pointer hover:underline">
-              Would you like a follow up on how he became king?
+                      )}
             </div>
-
-            {/* User Input */}
-            <div className="text-sm text-gray-dark">
-                  The king of Eldoria&apos;s father is King Arion, who was the king before him. He died 10 years before the Siege of Eldor. Add this to the world lore.
+                  ))}
+                  {isProcessingChat && (
+                    <div className="w-full">
+                      <div className="px-4 py-2.5">
+                        <p className="text-sm text-gray">Processing...</p>
             </div>
-
-            {/* Status */}
-            <div className="text-xs text-gray">Lore successfully updated.</div>
+                  </div>
+                  )}
+                  <div ref={chatMessagesEndRef} />
+            </div>
           </div>
 
               {/* Bottom Input */}
-              <div className="border-t border-gray-200 p-4">
+              <div className="border-t border-gray-200 p-4 flex-shrink-0">
                 <div className="relative">
                   <textarea
-                    placeholder="Ask about lore, or create new lore connections."
-                    className="w-full bg-gray-light border border-gray-200 rounded-lg px-4 py-3 pr-10 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    ref={chatInputRef}
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        handleSendChatMessage()
+                      }
+                    }}
+                    placeholder="Ask about lore, or create new lore connections..."
+                    className="w-full bg-gray-light border border-gray-200 rounded-lg px-4 py-3 pr-10 text-sm text-gray-dark placeholder-gray resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-all"
+                    style={{ minHeight: '60px', maxHeight: '120px' }}
                     rows={2}
+                    disabled={isProcessingChat || !selectedProjectId}
                   />
-                  <button className="absolute bottom-3 right-3 p-1 text-primary hover:text-primary-dark">
+                  <button 
+                    onClick={handleSendChatMessage}
+                    disabled={isProcessingChat || !selectedProjectId || !chatInput.trim()}
+                    className="absolute bottom-3 right-3 p-1 text-primary hover:text-primary-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                   </button>
                 </div>
-                <div className="mt-2 text-xs text-gray">Add Context</div>
               </div>
             </>
           )}
