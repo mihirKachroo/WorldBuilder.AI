@@ -193,10 +193,17 @@ export async function POST(request: Request) {
 IMPORTANT RULES FOR EXTRACTION:
 1. Only extract information that is EXPLICITLY stated in the text. Do not infer or add details.
 2. For entity descriptions, only include facts directly mentioned in the text.
-3. If a relationship is mentioned, extract it with an appropriate label (e.g., "brother of", "exiled from", "duke of").
-4. Use the exact names as they appear in the text (fuzzy matching will handle misspellings).
-5. If an entity is mentioned but no description is given, use an empty string for description.
-6. If an entity name in the text is a misspelling of an existing entity, still use the name as written - normalization happens separately.
+3. CRITICAL: Extract ALL relationships mentioned in the text, regardless of how they are phrased. Relationships can be expressed in many ways:
+   - Direct: "X is the killer of Y" → relationship: {source: "X", target: "Y", label: "killer of"}
+   - Possessive: "X's enemy is Y" → relationship: {source: "X", target: "Y", label: "enemy of"}
+   - Passive: "Y was killed by X" → relationship: {source: "X", target: "Y", label: "killer of"}
+   - Descriptive: "X, who killed Y" → relationship: {source: "X", target: "Y", label: "killer of"}
+   - Any other phrasing that indicates a connection between entities
+4. Relationship labels should be clear and descriptive (e.g., "killer of", "enemy of", "brother of", "exiled from", "duke of", "ruler of", "servant of", "ally of", "betrayed by", etc.)
+5. Use the exact names as they appear in the text (fuzzy matching will handle misspellings).
+6. If an entity is mentioned but no description is given, use an empty string for description.
+7. If an entity name in the text is a misspelling of an existing entity, still use the name as written - normalization happens separately.
+8. When processing documents, extract relationships from the ENTIRE document content, not just the user's query.
 
 IMPORTANT RULES FOR QUESTIONS:
 1. If the user is asking a question (e.g., "Who is...?", "What is...?", "Tell me about..."), provide an answer in the "answer" field.
@@ -209,7 +216,7 @@ RESPONSE FORMAT:
 - If answering a question: Return JSON with "answer" (string) and "isQuestion": true.
 - If both: Include all fields.
 
-Example extraction:
+Example extraction 1:
 Input: "King Eldor's brother is Draco Arion, the Duke of Anverda, who was exiled from Eldoria due to suspected treason."
 Output: {
   "entities": [
@@ -217,6 +224,32 @@ Output: {
   ],
   "relationships": [
     {"source": "King Eldor", "target": "Draco Arion", "label": "brother of"}
+  ]
+}
+
+Example extraction 2 (with multiple relationship types):
+Input: "Lorron Gasku - King of the Orcs, a dangerous enemy to the kingdom of Eldoria. He is the killer of Captain Aris Vorn."
+Output: {
+  "entities": [
+    {"name": "Lorron Gasku", "description": "King of the Orcs. A dangerous enemy to the kingdom of Eldoria. Killer of Captain Aris Vorn."},
+    {"name": "Captain Aris Vorn", "description": ""}
+  ],
+  "relationships": [
+    {"source": "Lorron Gasku", "target": "Eldoria", "label": "enemy of"},
+    {"source": "Lorron Gasku", "target": "Captain Aris Vorn", "label": "killer of"}
+  ]
+}
+
+Example extraction 3 (passive voice):
+Input: "Captain Aris Vorn was killed by Lorron Gasku during the Battle of Eldoria."
+Output: {
+  "entities": [
+    {"name": "Captain Aris Vorn", "description": "Killed by Lorron Gasku during the Battle of Eldoria."},
+    {"name": "Lorron Gasku", "description": ""},
+    {"name": "Battle of Eldoria", "description": ""}
+  ],
+  "relationships": [
+    {"source": "Lorron Gasku", "target": "Captain Aris Vorn", "label": "killer of"}
   ]
 }
 
@@ -229,7 +262,14 @@ Output: {
   "relationships": []
 }
 
-IMPORTANT: If documents are provided, extract entities and relationships from them. The user may ask questions about the documents or want you to process them to add new information to the world.${existingNodesContext}${documentsContext}`
+CRITICAL INSTRUCTIONS FOR DOCUMENT PROCESSING:
+- If documents are provided, you MUST extract ALL entities and relationships from the document content itself.
+- Process the ENTIRE document content, not just the user's query text.
+- Extract relationships from sentences like "X is the killer of Y", "X killed Y", "Y was killed by X", "X's enemy is Y", etc.
+- The user's query text may be a question or instruction, but you should still extract information from the documents.
+- Example: If a document contains "Lorron Gasku is the killer of Captain Aris Vorn" and the user asks "Process this document", extract the relationship between Lorron Gasku and Captain Aris Vorn.
+
+${existingNodesContext}${documentsContext}`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',

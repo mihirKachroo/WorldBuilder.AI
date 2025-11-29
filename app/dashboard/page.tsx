@@ -169,6 +169,9 @@ export default function DashboardPage() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [openFile, setOpenFile] = useState<{ path: string; name: string; content: string } | null>(null)
   const [loadingFile, setLoadingFile] = useState(false)
+  const [isEditingFile, setIsEditingFile] = useState(false)
+  const [editedFileContent, setEditedFileContent] = useState('')
+  const [savingFile, setSavingFile] = useState(false)
   const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string; references?: string[]; documents?: Array<{ name: string; path: string }> }>>([
     { role: 'user', content: 'Who is the king of Eldoria?' },
     { role: 'assistant', content: 'The current king of Eldoria is King Eldor. He rules from Eldoria Castle and is a member of the Order of the Flame.\n\nWould you like a follow up on how he became king?' },
@@ -321,6 +324,8 @@ export default function DashboardPage() {
   const loadFileContent = useCallback(async (filePath: string, fileName: string) => {
     try {
       setLoadingFile(true)
+      setIsEditingFile(false)
+      setEditedFileContent('')
       const response = await fetch(`/api/documents?path=${encodeURIComponent(filePath)}`)
       if (response.ok) {
         const data = await response.json()
@@ -335,6 +340,35 @@ export default function DashboardPage() {
       setLoadingFile(false)
     }
   }, [])
+
+  const saveFileContent = useCallback(async () => {
+    if (!openFile || savingFile) return
+    
+    try {
+      setSavingFile(true)
+      const response = await fetch('/api/documents', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          path: openFile.path,
+          content: editedFileContent,
+        }),
+      })
+      
+      if (response.ok) {
+        setOpenFile({ ...openFile, content: editedFileContent })
+        setIsEditingFile(false)
+      } else {
+        const errorData = await response.json().catch(() => ({}))
+        setError(errorData.error || 'Failed to save file')
+      }
+    } catch (err) {
+      console.error('Failed to save file:', err)
+      setError('Failed to save file')
+    } finally {
+      setSavingFile(false)
+    }
+  }, [openFile, editedFileContent, savingFile])
 
   const loadProjects = useCallback(async () => {
     try {
@@ -1443,6 +1477,8 @@ export default function DashboardPage() {
 
       // Create nodes for new entities
       const createdNodes: Node<CharacterNodeData>[] = []
+      const createdRelationships: Array<{ source: string; target: string; label: string }> = []
+      
       for (const entity of entities) {
         // Check if node already exists
         const existingNode = nodes.find(n => 
@@ -1595,6 +1631,9 @@ export default function DashboardPage() {
                 label: rel.label || 'connected to',
               })
 
+              // Track this as a created relationship
+              createdRelationships.push(rel)
+
               const { sourceHandle, targetHandle } = calculateOptimalHandles(sourceNode, targetNode)
 
       const newEdge: Edge = {
@@ -1638,17 +1677,19 @@ export default function DashboardPage() {
       
       if (!answer) {
         // Generate response for entity/relationship extraction
-        const entityNames = entities.map((e: { name: string; description: string }) => e.name).join(', ')
-        const relationshipCount = relationships.length
+        // Only count and list entities that were actually created (not existing ones)
+        const createdEntityNames = createdNodes.map(node => node.data.name).join(', ')
+        const createdEntityCount = createdNodes.length
+        const createdRelationshipCount = createdRelationships.length
         
-        if (entities.length > 0 && relationshipCount > 0) {
-          aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) and ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
-        } else if (entities.length > 0) {
-          aiResponse = `I've added ${entities.length} ${entities.length === 1 ? 'entity' : 'entities'} (${entityNames}) to your world.`
-        } else if (relationshipCount > 0) {
-          aiResponse = `I've added ${relationshipCount} ${relationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+        if (createdEntityCount > 0 && createdRelationshipCount > 0) {
+          aiResponse = `I've added ${createdEntityCount} ${createdEntityCount === 1 ? 'entity' : 'entities'}${createdEntityNames ? ` (${createdEntityNames})` : ''} and ${createdRelationshipCount} ${createdRelationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
+        } else if (createdEntityCount > 0) {
+          aiResponse = `I've added ${createdEntityCount} ${createdEntityCount === 1 ? 'entity' : 'entities'}${createdEntityNames ? ` (${createdEntityNames})` : ''} to your world.`
+        } else if (createdRelationshipCount > 0) {
+          aiResponse = `I've added ${createdRelationshipCount} ${createdRelationshipCount === 1 ? 'relationship' : 'relationships'} to your world.`
         } else {
-          aiResponse = 'I couldn\'t extract any entities or relationships from that message. Could you provide more details?'
+          aiResponse = 'I couldn\'t extract any new entities or relationships from that message. Could you provide more details?'
         }
       }
 
@@ -2153,9 +2194,16 @@ export default function DashboardPage() {
                 <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center space-x-3">
                     <button
-                      onClick={() => setOpenFile(null)}
+                      onClick={() => {
+                        if (isEditingFile) {
+                          setIsEditingFile(false)
+                          setEditedFileContent('')
+                        } else {
+                          setOpenFile(null)
+                        }
+                      }}
                       className="p-2 hover:bg-gray-light rounded transition-colors"
-                      title="Close file"
+                      title={isEditingFile ? "Cancel editing" : "Close file"}
                     >
                       <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
@@ -2166,22 +2214,80 @@ export default function DashboardPage() {
                       <p className="text-xs text-gray">{openFile.path}</p>
                     </div>
                   </div>
-                  <button
-                    onClick={() => setOpenFile(null)}
-                    className="p-2 hover:bg-gray-light rounded transition-colors"
-                    title="Close file"
-                  >
-                    <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {isEditingFile ? (
+                      <>
+                        <button
+                          onClick={() => {
+                            setIsEditingFile(false)
+                            setEditedFileContent('')
+                          }}
+                          disabled={savingFile}
+                          className="px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light rounded transition-colors disabled:opacity-50"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={saveFileContent}
+                          disabled={savingFile}
+                          className="px-4 py-2 text-sm font-medium bg-primary text-white rounded hover:bg-primary-dark transition-colors disabled:opacity-50 flex items-center space-x-2"
+                        >
+                          {savingFile ? (
+                            <>
+                              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                              </svg>
+                              <span>Saving...</span>
+                            </>
+                          ) : (
+                            <span>Save</span>
+                          )}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setEditedFileContent(openFile.content)
+                            setIsEditingFile(true)
+                          }}
+                          className="px-4 py-2 text-sm font-medium text-gray-dark hover:bg-gray-light rounded transition-colors flex items-center space-x-2"
+                          title="Edit file"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          onClick={() => setOpenFile(null)}
+                          className="p-2 hover:bg-gray-light rounded transition-colors"
+                          title="Close file"
+                        >
+                          <svg className="w-5 h-5 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
                 
-                {/* Markdown Content */}
+                {/* Markdown Content or Editor */}
                 <div className="flex-1 overflow-y-auto p-6 min-h-0">
                   {loadingFile ? (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-gray">Loading file...</div>
+                    </div>
+                  ) : isEditingFile ? (
+                    <div className="max-w-4xl mx-auto h-full flex flex-col">
+                      <textarea
+                        value={editedFileContent}
+                        onChange={(e) => setEditedFileContent(e.target.value)}
+                        className="flex-1 w-full bg-white border border-gray-200 rounded-lg px-4 py-3 text-sm text-gray-dark font-mono resize-none focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                        placeholder="Enter markdown content..."
+                      />
                     </div>
                   ) : (
                     <div className="max-w-4xl mx-auto">

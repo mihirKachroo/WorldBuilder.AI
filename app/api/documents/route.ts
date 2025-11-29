@@ -190,3 +190,43 @@ export async function POST(request: Request) {
   }
 }
 
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json()
+    const { path, content } = body as { path: string; content: string }
+    
+    if (!path || content === undefined) {
+      return NextResponse.json(
+        { error: 'Path and content are required' },
+        { status: 400 }
+      )
+    }
+    
+    const documentsPath = join(process.cwd(), 'documents')
+    let fullPath = join(documentsPath, path)
+    
+    // Ensure .md extension is added if not present
+    if (!fullPath.endsWith('.md')) {
+      fullPath = `${fullPath}.md`
+    }
+    
+    // Security: ensure the path is within documents directory
+    if (!fullPath.startsWith(documentsPath)) {
+      return NextResponse.json(
+        { error: 'Invalid path' },
+        { status: 400 }
+      )
+    }
+    
+    // Write the file
+    await writeFile(fullPath, content, 'utf-8')
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error('Error saving file:', error)
+    return NextResponse.json(
+      { error: 'Failed to save file' },
+      { status: 500 }
+    )
+  }
+}
+
