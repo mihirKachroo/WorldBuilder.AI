@@ -1,0 +1,37 @@
+{
+  ".": [
+    "Historical Timeline",
+    "Notes & Ideas",
+    "World Lore",
+    "Story Chapters"
+  ],
+  "Historical Timeline": [
+    "Historical Timeline/Founding of Eldoria.md",
+    "Historical Timeline/Rise of the Flame.md",
+    "Historical Timeline/The War of Crowns.md"
+  ],
+  "Notes & Ideas": [
+    "Notes & Ideas/Character Motivations.md",
+    "Notes & Ideas/Future Arc Concepts.md",
+    "Notes & Ideas/Plot Threads to Resolve.md"
+  ],
+  "World Lore": [
+    "World Lore/Factions",
+    "World Lore/Geography"
+  ],
+  "World Lore/Factions": [
+    "World Lore/Factions/Order of the Flame.md",
+    "World Lore/Factions/The Royal Guard.md",
+    "World Lore/Factions/The Shadow Court.md"
+  ],
+  "World Lore/Geography": [
+    "World Lore/Geography/The Eastern Continent.md",
+    "World Lore/Geography/The Ruins of Velmor.md",
+    "World Lore/Geography/The Silver Sea.md"
+  ],
+  "Story Chapters": [
+    "Story Chapters/Chapter 1 - The Fall of Arion.md",
+    "Story Chapters/Chapter 2 - Shadows of the Past.md",
+    "Story Chapters/Chapter 3 - The Siege of Eldor.md"
+  ]
+}

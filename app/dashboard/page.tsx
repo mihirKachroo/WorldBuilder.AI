@@ -35,6 +35,14 @@ import {
 } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
+// Document structure
+interface DocumentItem {
+  name: string
+  path: string
+  type: 'file' | 'directory'
+  children?: DocumentItem[]
+}
+
 // Custom Character Node Component
 interface CharacterNodeData {
   name: string
@@ -150,6 +158,7 @@ const nodeTypes = {
 export default function DashboardPage() {
   const router = useRouter()
   const [activeTab, setActiveTab] = useState('Characters')
+  const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     'world-lore': true,
     'geography': false,
@@ -279,6 +288,18 @@ export default function DashboardPage() {
     return { sourceHandle, targetHandle }
   }, [])
 
+  const loadDocuments = useCallback(async () => {
+    try {
+      const response = await fetch('/api/documents')
+      if (response.ok) {
+        const data = await response.json()
+        setDocuments(data.documents || [])
+      }
+    } catch (err) {
+      console.error('Failed to load documents:', err)
+    }
+  }, [])
+
   const loadProjects = useCallback(async () => {
     try {
       setLoading(true)
@@ -379,9 +400,11 @@ export default function DashboardPage() {
     }
   }, [selectedProjectId, router, setNodes, setEdges, calculateOptimalHandles])
 
-  // Load projects on mount
+  // Load projects and documents on mount
   useEffect(() => {
     loadProjects()
+    loadDocuments()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadProjects])
 
   // Load characters and relationships when project is selected
@@ -415,7 +438,248 @@ export default function DashboardPage() {
     }))
   }
 
-  // Function to render description with clickable character names
+  // Function to save document order
+  const saveDocumentOrder = useCallback(async (newDocuments: DocumentItem[]) => {
+    try {
+      // Build order object from the current document structure
+      const buildOrder = (items: DocumentItem[], parentPath: string = '.'): Record<string, string[]> => {
+        const order: Record<string, string[]> = {}
+        const childPaths = items.map(item => item.path)
+        if (childPaths.length > 0) {
+          order[parentPath] = childPaths
+        }
+        
+        // Recursively build order for children
+        items.forEach(item => {
+          if (item.type === 'directory' && item.children) {
+            Object.assign(order, buildOrder(item.children, item.path))
+          }
+        })
+        
+        return order
+      }
+      
+      const order = buildOrder(newDocuments)
+      
+      const response = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ order }),
+      })
+      
+      if (!response.ok) {
+        console.error('Failed to save document order')
+      }
+    } catch (error) {
+      console.error('Error saving document order:', error)
+    }
+  }, [])
+
+  // Recursive component to render document tree with drag-and-drop
+  const DocumentTreeItem = ({ item, expandedSections, toggleSection, level, parentItems, onReorder }: { 
+    item: DocumentItem
+    expandedSections: Record<string, boolean>
+    toggleSection: (section: string) => void
+    level: number
+    parentItems: DocumentItem[]
+    onReorder: (newItems: DocumentItem[]) => void
+  }) => {
+    const sectionKey = item.path.replace(/\//g, '-').replace(/\s+/g, '-').toLowerCase()
+    const isExpanded = expandedSections[sectionKey] ?? false
+    const [isDragging, setIsDragging] = useState(false)
+    const [dropPosition, setDropPosition] = useState<'above' | 'below' | null>(null)
+    
+    const handleDragStart = (e: React.DragEvent) => {
+      setIsDragging(true)
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', item.path)
+    }
+    
+    const handleDragEnd = () => {
+      setIsDragging(false)
+      setDropPosition(null)
+    }
+    
+    const handleDragOver = (e: React.DragEvent) => {
+      e.preventDefault()
+      e.dataTransfer.dropEffect = 'move'
+      
+      const draggedPath = e.dataTransfer.getData('text/plain')
+      if (draggedPath === item.path) {
+        setDropPosition(null)
+        return
+      }
+      
+      // Determine if drop should be above or below based on mouse position
+      const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+      const mouseY = e.clientY
+      const elementMiddle = rect.top + rect.height / 2
+      
+      const position = mouseY < elementMiddle ? 'above' : 'below'
+      setDropPosition(position)
+      // Store in dataTransfer for use in handleDrop
+      e.dataTransfer.setData('drop-position', position)
+    }
+    
+    const handleDragLeave = () => {
+      setDropPosition(null)
+    }
+    
+    const handleDrop = (e: React.DragEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const draggedPath = e.dataTransfer.getData('text/plain')
+      const savedDropPosition = e.dataTransfer.getData('drop-position') as 'above' | 'below' | ''
+      const finalDropPosition = savedDropPosition || dropPosition
+      setDropPosition(null)
+      
+      if (draggedPath === item.path) return // Can't drop on itself
+      
+      if (!draggedPath) return
+      
+      // Find and remove the dragged item from parentItems
+      const findItem = (items: DocumentItem[], path: string): DocumentItem | null => {
+        for (const it of items) {
+          if (it.path === path) return it
+          if (it.children) {
+            const found = findItem(it.children, path)
+            if (found) return found
+          }
+        }
+        return null
+      }
+      
+      const removeItem = (items: DocumentItem[], path: string): DocumentItem[] => {
+        return items.filter(it => {
+          if (it.path === path) return false
+          if (it.children) {
+            it.children = removeItem(it.children, path)
+          }
+          return true
+        })
+      }
+      
+      const draggedItem = findItem(parentItems, draggedPath)
+      if (!draggedItem) return
+      
+      // Remove dragged item from its current position
+      const itemsWithoutDragged = removeItem([...parentItems], draggedPath)
+      
+      // Find the index of the current item
+      const currentIndex = itemsWithoutDragged.findIndex(it => it.path === item.path)
+      if (currentIndex === -1) return
+      
+      // Determine insertion position based on drop position
+      const insertIndex = finalDropPosition === 'above' ? currentIndex : currentIndex + 1
+      
+      // Insert the dragged item at the new position
+      const newItems = [...itemsWithoutDragged]
+      newItems.splice(insertIndex, 0, draggedItem)
+      
+      onReorder(newItems)
+    }
+    
+    if (item.type === 'directory') {
+      return (
+        <div className="relative">
+          {/* Drop indicator line above */}
+          {dropPosition === 'above' && (
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary z-10" />
+          )}
+          <div
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative ${isDragging ? 'opacity-50' : ''}`}
+          >
+            <div className="flex items-center">
+              <div 
+                className="flex items-center space-x-2 min-w-0 flex-1 p-2 hover:bg-gray-light rounded text-sm text-gray-dark cursor-move"
+              >
+                <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <span className="truncate text-left">{item.name}</span>
+              </div>
+              <button 
+                onClick={(e) => {
+                  e.stopPropagation()
+                  toggleSection(sectionKey)
+                }}
+                onDragStart={(e) => {
+                  e.stopPropagation()
+                  e.preventDefault()
+                }}
+                draggable={false}
+                className="p-2 hover:bg-gray-light rounded text-sm text-gray-dark flex-shrink-0"
+              >
+                <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
+            {isExpanded && item.children && item.children.length > 0 && (
+              <div className="ml-6 mt-1 space-y-1">
+                {item.children.map((child) => (
+                  <DocumentTreeItem
+                    key={child.path}
+                    item={child}
+                    expandedSections={expandedSections}
+                    toggleSection={toggleSection}
+                    level={level + 1}
+                    parentItems={item.children || []}
+                    onReorder={(newChildren) => {
+                      const updatedItem = { ...item, children: newChildren }
+                      const updatedParent = parentItems.map(it => 
+                        it.path === item.path ? updatedItem : it
+                      )
+                      onReorder(updatedParent)
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Drop indicator line below */}
+          {dropPosition === 'below' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary z-10" />
+          )}
+        </div>
+      )
+    } else {
+      // File item
+      return (
+        <div className="relative">
+          {/* Drop indicator line above */}
+          {dropPosition === 'above' && (
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary z-10" />
+          )}
+          <div
+            draggable
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={`relative p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left ${isDragging ? 'opacity-50' : ''}`}
+            onClick={() => {
+              // TODO: Open file in editor/viewer
+              console.log('Open file:', item.path)
+            }}
+          >
+            <span>{item.name}</span>
+          </div>
+          {/* Drop indicator line below */}
+          {dropPosition === 'below' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary z-10" />
+          )}
+        </div>
+      )
+    }
+  }
   const renderDescriptionWithLinks = (description: string) => {
     if (!description) return null
 
@@ -1178,148 +1442,20 @@ export default function DashboardPage() {
             </div>
             
             <div className="space-y-1">
-              {/* Story Chapters */}
-              <div>
-                <button 
-                  onClick={() => toggleSection('story-chapters')}
-                  className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
-                >
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <span className="truncate text-left">Story Chapters</span>
-                  </div>
-                  <svg className={`w-4 h-4 transition-transform ${expandedSections['story-chapters'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                {expandedSections['story-chapters'] && (
-                  <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 1: The Fall of Arion</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 2: Shadows of the...</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 3: The Siege of Eld...</div>
-                  </div>
-                )}
-              </div>
-
-              {/* World Lore */}
-              <div>
-                <button 
-                  onClick={() => toggleSection('world-lore')}
-                  className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
-                >
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <span className="truncate text-left">World Lore</span>
-                  </div>
-                  <svg className={`w-4 h-4 transition-transform ${expandedSections['world-lore'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                {expandedSections['world-lore'] && (
-                  <div className="ml-6 mt-1 space-y-1">
-                    <div>
-                      <button 
-                        onClick={() => toggleSection('geography')}
-                        className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray"
-                      >
-                        <div className="flex items-center space-x-2 min-w-0 flex-1">
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                          </svg>
-                          <span className="truncate text-left">Geography</span>
-                        </div>
-                        <svg className={`w-4 h-4 transition-transform ${expandedSections['geography'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      {expandedSections['geography'] && (
-                        <div className="ml-6 mt-1 space-y-1">
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Eastern Continent</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Silver Sea</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Ruins of Velmor</div>
-                        </div>
-                      )}
-                    </div>
-                    <div>
-                      <button 
-                        onClick={() => toggleSection('factions')}
-                        className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray"
-                      >
-                        <div className="flex items-center space-x-2 min-w-0 flex-1">
-                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                          </svg>
-                          <span className="truncate text-left">Factions</span>
-                        </div>
-                        <svg className={`w-4 h-4 transition-transform ${expandedSections['factions'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </button>
-                      {expandedSections['factions'] && (
-                        <div className="ml-6 mt-1 space-y-1">
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Order of the Flame</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Royal Guard</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Shadow Court</div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Historical Timeline */}
-              <div>
-                <button 
-                  onClick={() => toggleSection('timeline')}
-                  className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
-                >
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <span className="truncate text-left">Historical Timeline</span>
-                  </div>
-                  <svg className={`w-4 h-4 transition-transform ${expandedSections['timeline'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                {expandedSections['timeline'] && (
-                  <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Founding of Eldoria</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The War of Crowns</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Rise of the Flame</div>
-                  </div>
-                )}
-              </div>
-
-              {/* Notes & Ideas */}
-              <div>
-                <button 
-                  onClick={() => toggleSection('notes')}
-                  className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
-                >
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
-                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                    </svg>
-                    <span className="truncate text-left">Notes & Ideas</span>
-                  </div>
-                  <svg className={`w-4 h-4 transition-transform ${expandedSections['notes'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </button>
-                {expandedSections['notes'] && (
-                  <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Character Motivations</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Plot Threads to Resolve</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Future Arc Concepts</div>
-                  </div>
-                )}
-              </div>
+              {documents.map((item) => (
+                <DocumentTreeItem
+                  key={item.path}
+                  item={item}
+                  expandedSections={expandedSections}
+                  toggleSection={toggleSection}
+                  level={0}
+                  parentItems={documents}
+                  onReorder={(newItems) => {
+                    setDocuments(newItems)
+                    saveDocumentOrder(newItems)
+                  }}
+                />
+              ))}
             </div>
           </div>
 
@@ -1614,8 +1750,8 @@ export default function DashboardPage() {
                     const connection: Connection = {
                       source: connectionStart.nodeId,
                       target: targetNodeId,
-                      sourceHandle: connectionStart.handleId || undefined,
-                      targetHandle: (targetHandleId || undefined) as string | undefined,
+                      sourceHandle: (connectionStart.handleId || null) as string | null,
+                      targetHandle: (targetHandleId || null) as string | null,
                     }
                     console.log('🔴 Manually calling onConnect with:', connection)
                     onConnect(connection)
