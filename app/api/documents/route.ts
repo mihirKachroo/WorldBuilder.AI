@@ -109,7 +109,49 @@ async function saveOrder(order: DocumentOrder): Promise<void> {
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const { searchParams } = new URL(request.url)
+  const filePath = searchParams.get('path')
+  
+  // If path is provided, return file content
+  if (filePath) {
+    try {
+      const documentsPath = join(process.cwd(), 'documents')
+      let fullPath = join(documentsPath, filePath)
+      
+      // Ensure .md extension is added if not present
+      if (!fullPath.endsWith('.md')) {
+        fullPath = `${fullPath}.md`
+      }
+      
+      // Security: ensure the path is within documents directory (check after adding .md)
+      if (!fullPath.startsWith(documentsPath)) {
+        return NextResponse.json(
+          { error: 'Invalid path' },
+          { status: 400 }
+        )
+      }
+      
+      // Check if file exists
+      if (!existsSync(fullPath)) {
+        return NextResponse.json(
+          { error: 'File not found' },
+          { status: 404 }
+        )
+      }
+      
+      const content = await readFile(fullPath, 'utf-8')
+      return NextResponse.json({ content, path: filePath })
+    } catch (error) {
+      console.error('Error reading file:', error)
+      return NextResponse.json(
+        { error: 'Failed to read file' },
+        { status: 500 }
+      )
+    }
+  }
+  
+  // Otherwise, return document list (existing behavior)
   try {
     const documentsPath = join(process.cwd(), 'documents')
     const order = await getOrder()
