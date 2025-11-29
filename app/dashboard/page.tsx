@@ -60,14 +60,22 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
       }`}
       style={{ pointerEvents: 'auto' }}
     >
-      {/* Source Handles - All sides for automatic routing - Only visible on hover */}
-      {/* Counterclockwise offset: left→down, top→left, right→up, bottom→right */}
+      {/* Handles - All sides for automatic routing - Only visible on hover - Centered on edges */}
+      {/* Source and target handles overlap at the same positions, so only 4 handles are visible */}
       <Handle
         type="source"
         position={Position.Top}
         id="source-top"
         className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ left: 'calc(50% - 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="target-top"
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
@@ -75,34 +83,7 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
         position={Position.Right}
         id="source-right"
         className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ top: 'calc(50% - 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
-        isConnectable={true}
-      />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        id="source-bottom"
-        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ left: 'calc(50% + 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
-        isConnectable={true}
-      />
-      <Handle
-        type="source"
-        position={Position.Left}
-        id="source-left"
-        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ top: 'calc(50% + 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
-        isConnectable={true}
-      />
-      
-      {/* Target Handles - All sides for automatic routing - Only visible on hover */}
-      {/* Clockwise offset: left→up, top→right, right→down, bottom→left */}
-      <Handle
-        type="target"
-        position={Position.Top}
-        id="target-top"
-        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ left: 'calc(50% + 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
@@ -110,7 +91,15 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
         position={Position.Right}
         id="target-right"
         className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ top: 'calc(50% + 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="source-bottom"
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
@@ -118,7 +107,15 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
         position={Position.Bottom}
         id="target-bottom"
         className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ left: 'calc(50% - 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        isConnectable={true}
+      />
+      <Handle
+        type="source"
+        position={Position.Left}
+        id="source-left"
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
@@ -126,7 +123,7 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
         position={Position.Left}
         id="target-left"
         className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
-        style={{ top: 'calc(50% - 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
 
@@ -2101,14 +2098,21 @@ export default function DashboardPage() {
             const selectedNode = nodes.find(n => n.id === selectedNodeId)
             if (!selectedNode) return null
             
-            // Find connected nodes
-            const connectedNodes = edges
+            // Find connected nodes with direction information
+            const connectedNodesWithDirection = edges
               .filter(e => e.source === selectedNodeId || e.target === selectedNodeId)
               .map(e => {
-                const connectedId = e.source === selectedNodeId ? e.target : e.source
-                return nodes.find(n => n.id === connectedId)
+                const isOutgoing = e.source === selectedNodeId
+                const connectedId = isOutgoing ? e.target : e.source
+                const connectedNode = nodes.find(n => n.id === connectedId)
+                if (!connectedNode) return null
+                return {
+                  node: connectedNode,
+                  edge: e,
+                  isOutgoing,
+                }
               })
-              .filter(Boolean) as Node<CharacterNodeData>[]
+              .filter(Boolean) as Array<{ node: Node<CharacterNodeData>; edge: Edge; isOutgoing: boolean }>
             
             return (
               <>
@@ -2212,15 +2216,11 @@ export default function DashboardPage() {
                   </div>
 
                   {/* Connections */}
-                  {connectedNodes.length > 0 && (
+                  {connectedNodesWithDirection.length > 0 && (
                     <div>
                       <h4 className="text-sm font-semibold text-gray-dark mb-2">Connections</h4>
                       <div className="space-y-2">
-                        {connectedNodes.map((node) => {
-                          const edge = edges.find(e => 
-                            (e.source === selectedNodeId && e.target === node.id) ||
-                            (e.source === node.id && e.target === selectedNodeId)
-                          )
+                        {connectedNodesWithDirection.map(({ node, edge, isOutgoing }) => {
                           return (
                             <div
                               key={node.id}
@@ -2240,7 +2240,12 @@ export default function DashboardPage() {
                                 <span className="text-sm font-medium text-gray-dark">{node.data.name}</span>
                               </div>
                               {edge?.label && (
+                                  <div className="flex items-center space-x-1">
+                                    <span className="text-xs text-primary">
+                                      {isOutgoing ? '←' : '→'}
+                                    </span>
                                 <span className="text-xs text-gray">{edge.label}</span>
+                                  </div>
                               )}
                             </button>
                               <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
