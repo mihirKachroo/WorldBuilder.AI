@@ -159,6 +159,7 @@ export default function DashboardPage() {
   const [selectedConversation, setSelectedConversation] = useState('king-of-eldoria')
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
+  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null)
   const [isEditingDescription, setIsEditingDescription] = useState(false)
   const [editedDescription, setEditedDescription] = useState('')
   const [showNewNodeModal, setShowNewNodeModal] = useState(false)
@@ -515,6 +516,14 @@ export default function DashboardPage() {
 
   const onNodeMouseLeave = useCallback(() => {
     setHoveredNodeId(null)
+  }, [])
+
+  const onEdgeMouseEnter = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    setHoveredEdgeId(edge.id)
+  }, [])
+
+  const onEdgeMouseLeave = useCallback(() => {
+    setHoveredEdgeId(null)
   }, [])
 
   // Recalculate edge handles when nodes move
@@ -1160,7 +1169,7 @@ export default function DashboardPage() {
           {/* Documents Section */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-dark">Entities</h3>
+              <h3 className="font-semibold text-gray-dark">Documents</h3>
               <button className="p-1 hover:bg-gray-light rounded">
                 <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
@@ -1314,10 +1323,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Entities Section */}
+          {/* Documents Section */}
           <div className="p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-gray-dark">Graphs</h3>
+              <h3 className="font-semibold text-gray-dark">Entities</h3>
               <button 
                 onClick={() => setShowNewNodeModal(true)}
                 className="p-1 hover:bg-gray-light rounded text-primary"
@@ -1473,39 +1482,60 @@ export default function DashboardPage() {
                   connectable: true,
                 }
               })}
-              edges={edges.map(edge => {
-                // Highlight edges connected to the highlighted node (hover takes precedence)
-                const highlightedNodeId = hoveredNodeId || selectedNodeId
-                const isOutgoing = highlightedNodeId && edge.source === highlightedNodeId
-                const isIncoming = highlightedNodeId && edge.target === highlightedNodeId
-                const isHighlighted = isOutgoing || isIncoming
-                
-                // Different shades of purple for incoming vs outgoing edges
-                let edgeColor = '#5B21B6' // default purple
-                if (isOutgoing) {
-                  edgeColor = '#a855f7' // lighter purple for outgoing
-                } else if (isIncoming) {
-                  edgeColor = '#7c3aed' // darker purple for incoming
-                }
-                
-                return {
-                  ...edge,
-                  style: isHighlighted 
-                    ? { stroke: edgeColor, strokeWidth: 3, opacity: 1 }
-                    : highlightedNodeId
-                    ? { stroke: '#5B21B6', strokeWidth: 2, opacity: 0.3 }
-                    : { stroke: '#5B21B6', strokeWidth: 2, opacity: 1 },
-                  markerEnd: {
-                    type: MarkerType.ArrowClosed,
-                    color: isHighlighted ? edgeColor : '#5B21B6',
-                  },
-                  labelStyle: { 
-                    fill: isHighlighted ? edgeColor : '#5B21B6', 
-                    fontWeight: isHighlighted ? 600 : 500, 
-                    fontSize: 12 
-                  },
-                }
-              })}
+              edges={[
+                // Non-hovered edges first
+                ...edges
+                  .filter(edge => edge.id !== hoveredEdgeId)
+                  .map(edge => {
+                    // Highlight edges connected to the highlighted node (hover takes precedence)
+                    const highlightedNodeId = hoveredNodeId || selectedNodeId
+                    const isOutgoing = highlightedNodeId && edge.source === highlightedNodeId
+                    const isIncoming = highlightedNodeId && edge.target === highlightedNodeId
+                    const isHighlighted = isOutgoing || isIncoming
+                    
+                    // Different shades of purple for incoming vs outgoing edges
+                    let edgeColor = '#5B21B6' // default purple
+                    if (isOutgoing) {
+                      edgeColor = '#a855f7' // lighter purple for outgoing
+                    } else if (isIncoming) {
+                      edgeColor = '#7c3aed' // darker purple for incoming
+                    }
+                    
+                    return {
+                      ...edge,
+                      style: isHighlighted 
+                        ? { stroke: edgeColor, strokeWidth: 3, opacity: 1 }
+                        : highlightedNodeId
+                        ? { stroke: '#5B21B6', strokeWidth: 2, opacity: 0.3 }
+                        : { stroke: '#5B21B6', strokeWidth: 2, opacity: 1 },
+                      markerEnd: {
+                        type: MarkerType.ArrowClosed,
+                        color: isHighlighted ? edgeColor : '#5B21B6',
+                      },
+                      labelStyle: { 
+                        fill: isHighlighted ? edgeColor : '#5B21B6', 
+                        fontWeight: isHighlighted ? 600 : 500, 
+                        fontSize: 12 
+                      },
+                    }
+                  }),
+                // Hovered edge last (renders on top)
+                ...edges
+                  .filter(edge => edge.id === hoveredEdgeId)
+                  .map(edge => ({
+                    ...edge,
+                    style: { stroke: '#7c3aed', strokeWidth: 3, opacity: 1 },
+                    markerEnd: {
+                      type: MarkerType.ArrowClosed,
+                      color: '#7c3aed',
+                    },
+                    labelStyle: { 
+                      fill: '#7c3aed', 
+                      fontWeight: 700, 
+                      fontSize: 12 
+                    },
+                  })),
+              ]}
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
@@ -1514,6 +1544,8 @@ export default function DashboardPage() {
               onNodeMouseLeave={onNodeMouseLeave}
               onNodeDragStop={onNodeDragStop}
               onNodeContextMenu={onNodeContextMenu}
+              onEdgeMouseEnter={onEdgeMouseEnter}
+              onEdgeMouseLeave={onEdgeMouseLeave}
               onEdgeDoubleClick={onEdgeDoubleClick}
               onInit={(instance) => {
                 reactFlowInstance.current = instance
@@ -1923,18 +1955,45 @@ export default function DashboardPage() {
                   </svg>
                   <span>Edit Description</span>
                 </button>
-                <button
-                  onClick={() => {
-                    setShowEditColorModal(true)
-                    closeContextMenu()
-                  }}
-                  className="w-full text-left px-4 py-2 text-sm text-gray-dark hover:bg-gray-light flex items-center space-x-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
-                  </svg>
-                  <span>Change Color</span>
-                </button>
+                <div className="border-t border-gray-200 my-1"></div>
+                <div className="px-2 py-2">
+                  <div className="flex items-center space-x-2 mb-2 px-2">
+                    <svg className="w-4 h-4 text-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" />
+                    </svg>
+                    <span className="text-sm text-gray-dark">Change Color</span>
+                  </div>
+                  <div className="flex justify-center">
+                    <div className="grid grid-cols-4 gap-x-5 gap-y-3">
+                      {colorPresets.map((preset) => {
+                        const node = nodes.find(n => n.id === contextMenu.nodeId)
+                        const isSelected = node?.data.bgColor === preset.bg
+                        return (
+                          <button
+                            key={preset.name}
+                            onClick={async () => {
+                              if (contextMenu.nodeId) {
+                                setSelectedNodeId(contextMenu.nodeId)
+                                await handleUpdateCharacterColor({
+                                  bg: preset.bg,
+                                  border: preset.border,
+                                  text: preset.text,
+                                  icon: preset.icon,
+                                })
+                              }
+                              closeContextMenu()
+                            }}
+                            disabled={saving}
+                            className={`w-5 h-5 rounded-full ${preset.bg} border-2 transition-all hover:scale-110 ${
+                              isSelected ? 'ring-2 ring-primary ring-offset-1 border-primary' : 'border-gray-300'
+                            }`}
+                            title={preset.name}
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
                 <div className="border-t border-gray-200 my-1"></div>
                 <button
                   onClick={() => {
