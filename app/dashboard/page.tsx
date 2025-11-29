@@ -45,11 +45,14 @@ interface CharacterNodeData {
   iconColor: string
   isFocused?: boolean
   isHighlighted?: boolean
+  isHovered?: boolean
   characterId?: number // Store the database ID
 }
 
 const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
   const isHighlighted = data.isHighlighted || false
+  const isHovered = data.isHovered || false
+  const handleVisibility = isHovered ? 'opacity-100' : 'opacity-0'
   return (
     <div
       className={`rounded-lg p-3 shadow-sm w-48 relative ${data.bgColor} ${data.borderColor} ${
@@ -57,71 +60,73 @@ const CharacterNode = ({ data }: { data: CharacterNodeData }) => {
       }`}
       style={{ pointerEvents: 'auto' }}
     >
-      {/* Source Handles - All sides for automatic routing */}
+      {/* Source Handles - All sides for automatic routing - Only visible on hover */}
+      {/* Counterclockwise offset: left→down, top→left, right→up, bottom→right */}
       <Handle
         type="source"
         position={Position.Top}
         id="source-top"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: 'calc(50% - 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="source"
         position={Position.Right}
         id="source-right"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ top: 'calc(50% - 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="source"
         position={Position.Bottom}
         id="source-bottom"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: 'calc(50% + 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="source"
         position={Position.Left}
         id="source-left"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ top: 'calc(50% + 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       
-      {/* Target Handles - All sides for automatic routing */}
+      {/* Target Handles - All sides for automatic routing - Only visible on hover */}
+      {/* Clockwise offset: left→up, top→right, right→down, bottom→left */}
       <Handle
         type="target"
         position={Position.Top}
         id="target-top"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: 'calc(50% + 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="target"
         position={Position.Right}
         id="target-right"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ top: 'calc(50% + 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="target"
         position={Position.Bottom}
         id="target-bottom"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ left: '50%', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ left: 'calc(50% - 10px)', transform: 'translateX(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
       <Handle
         type="target"
         position={Position.Left}
         id="target-left"
-        className="!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair"
-        style={{ top: '50%', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
+        className={`!w-3 !h-3 !bg-primary !border-2 !border-white !cursor-crosshair transition-opacity ${handleVisibility}`}
+        style={{ top: 'calc(50% - 10px)', transform: 'translateY(-50%)', zIndex: 10, pointerEvents: 'all' }}
         isConnectable={true}
       />
 
@@ -202,6 +207,48 @@ export default function DashboardPage() {
   
   // Track position for new node created by dragging from a handle
   const [draggedNodePosition, setDraggedNodePosition] = useState<{ x: number; y: number } | null>(null)
+
+  // Sidebar resize state
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(256) // w-64 = 256px
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(320) // w-80 = 320px
+  const [isResizingLeft, setIsResizingLeft] = useState(false)
+  const [isResizingRight, setIsResizingRight] = useState(false)
+
+  // Resize handlers
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isResizingLeft) {
+        const newWidth = e.clientX
+        if (newWidth >= 200 && newWidth <= 600) {
+          setLeftSidebarWidth(newWidth)
+        }
+      } else if (isResizingRight) {
+        const newWidth = window.innerWidth - e.clientX
+        if (newWidth >= 200 && newWidth <= 600) {
+          setRightSidebarWidth(newWidth)
+        }
+      }
+    }
+
+    const handleMouseUp = () => {
+      setIsResizingLeft(false)
+      setIsResizingRight(false)
+    }
+
+    if (isResizingLeft || isResizingRight) {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+  }, [isResizingLeft, isResizingRight])
 
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
@@ -307,6 +354,9 @@ export default function DashboardPage() {
           targetHandle,
           label: rel.label || 'connected to',
           type: 'smoothstep',
+          pathOptions: {
+            borderRadius: 20,
+          },
           style: { stroke: '#5B21B6', strokeWidth: 2 },
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -626,6 +676,40 @@ export default function DashboardPage() {
     }
   }, [selectedProjectId, nodes, selectedNodeId, setNodes, setEdges])
 
+  // Handle Delete key to delete selected node
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Handle both Delete and Backspace keys
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedNodeId) {
+        // Don't trigger if user is typing in an input, textarea, or contenteditable element
+        const target = event.target as HTMLElement
+        if (
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.isContentEditable ||
+          target.closest('input') ||
+          target.closest('textarea')
+        ) {
+        return
+      }
+        
+        // Don't trigger if a modal is open
+        if (showNewNodeModal || showRelationshipModal || editingEdgeId || showEditNameModal || showEditColorModal) {
+          return
+        }
+        
+        // Prevent default behavior and delete the node
+        event.preventDefault()
+        event.stopPropagation()
+        handleDeleteNode(selectedNodeId)
+      }
+    }
+
+    // Use capture phase to catch events before ReactFlow handles them
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => document.removeEventListener('keydown', handleKeyDown, true)
+  }, [selectedNodeId, handleDeleteNode, showNewNodeModal, showRelationshipModal, editingEdgeId, showEditNameModal, showEditColorModal])
+
   const onConnect = useCallback((params: Connection) => {
     console.log('✅ onConnect called:', params)
     if (!params.source || !params.target || !selectedProjectId) {
@@ -707,6 +791,9 @@ export default function DashboardPage() {
         sourceHandle: sourceHandle || undefined,
         targetHandle: targetHandle || undefined,
         type: 'smoothstep',
+        pathOptions: {
+          borderRadius: 20,
+        },
         label: newRelationship.label || 'connected to',
         style: { stroke: '#5B21B6', strokeWidth: 2 },
         markerEnd: {
@@ -1046,16 +1133,27 @@ export default function DashboardPage() {
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
-        <aside className="w-64 bg-white border-r border-gray-200 flex flex-col overflow-y-auto">
+        <aside 
+          className="bg-white border-r border-gray-200 flex flex-col overflow-y-auto relative"
+          style={{ width: `${leftSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' }}
+        >
+          {/* Resize Handle */}
+          <div
+            className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary hover:opacity-50 transition-colors z-10"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setIsResizingLeft(true)
+            }}
+          />
           {/* Project Selector */}
           <div className="p-4 border-b border-gray-200">
             <div className="flex items-center space-x-3 mb-2">
               <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-white font-semibold">
                 {selectedProject?.name?.[0]?.toUpperCase() || 'E'}
               </div>
-              <div className="flex-1">
-                <div className="font-semibold text-gray-dark">{selectedProject?.name || 'No Project'}</div>
-                <div className="text-sm text-gray flex items-center">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold text-gray-dark truncate text-left">{selectedProject?.name || 'No Project'}</div>
+                <div className="text-sm text-gray truncate text-left">
                   {selectedProject?.description || 'Select a project'}
                 </div>
               </div>
@@ -1080,11 +1178,11 @@ export default function DashboardPage() {
                   onClick={() => toggleSection('story-chapters')}
                   className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
                 >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
-                    <span>Story Chapters</span>
+                    <span className="truncate text-left">Story Chapters</span>
                   </div>
                   <svg className={`w-4 h-4 transition-transform ${expandedSections['story-chapters'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1092,9 +1190,9 @@ export default function DashboardPage() {
                 </button>
                 {expandedSections['story-chapters'] && (
                   <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Chapter 1: The Fall of Arion</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Chapter 2: Shadows of the...</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Chapter 3: The Siege of Eld...</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 1: The Fall of Arion</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 2: Shadows of the...</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Chapter 3: The Siege of Eld...</div>
                   </div>
                 )}
               </div>
@@ -1105,11 +1203,11 @@ export default function DashboardPage() {
                   onClick={() => toggleSection('world-lore')}
                   className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
                 >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
-                    <span>World Lore</span>
+                    <span className="truncate text-left">World Lore</span>
                   </div>
                   <svg className={`w-4 h-4 transition-transform ${expandedSections['world-lore'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1122,11 +1220,11 @@ export default function DashboardPage() {
                         onClick={() => toggleSection('geography')}
                         className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray"
                       >
-                        <div className="flex items-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex items-center space-x-2 min-w-0 flex-1">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                           </svg>
-                          <span>Geography</span>
+                          <span className="truncate text-left">Geography</span>
                         </div>
                         <svg className={`w-4 h-4 transition-transform ${expandedSections['geography'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1134,9 +1232,9 @@ export default function DashboardPage() {
                       </button>
                       {expandedSections['geography'] && (
                         <div className="ml-6 mt-1 space-y-1">
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The Eastern Continent</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The Silver Sea</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The Ruins of Velmor</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Eastern Continent</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Silver Sea</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Ruins of Velmor</div>
                         </div>
                       )}
                     </div>
@@ -1145,11 +1243,11 @@ export default function DashboardPage() {
                         onClick={() => toggleSection('factions')}
                         className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray"
                       >
-                        <div className="flex items-center space-x-2">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <div className="flex items-center space-x-2 min-w-0 flex-1">
+                          <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                           </svg>
-                          <span>Factions</span>
+                          <span className="truncate text-left">Factions</span>
                         </div>
                         <svg className={`w-4 h-4 transition-transform ${expandedSections['factions'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1157,9 +1255,9 @@ export default function DashboardPage() {
                       </button>
                       {expandedSections['factions'] && (
                         <div className="ml-6 mt-1 space-y-1">
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Order of the Flame</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The Royal Guard</div>
-                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The Shadow Court</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Order of the Flame</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Royal Guard</div>
+                          <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The Shadow Court</div>
                         </div>
                       )}
                     </div>
@@ -1173,11 +1271,11 @@ export default function DashboardPage() {
                   onClick={() => toggleSection('timeline')}
                   className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
                 >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
-                    <span>Historical Timeline</span>
+                    <span className="truncate text-left">Historical Timeline</span>
                   </div>
                   <svg className={`w-4 h-4 transition-transform ${expandedSections['timeline'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1185,9 +1283,9 @@ export default function DashboardPage() {
                 </button>
                 {expandedSections['timeline'] && (
                   <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Founding of Eldoria</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">The War of Crowns</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Rise of the Flame</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Founding of Eldoria</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">The War of Crowns</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Rise of the Flame</div>
                   </div>
                 )}
               </div>
@@ -1198,11 +1296,11 @@ export default function DashboardPage() {
                   onClick={() => toggleSection('notes')}
                   className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
                 >
-                  <div className="flex items-center space-x-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                     </svg>
-                    <span>Notes & Ideas</span>
+                    <span className="truncate text-left">Notes & Ideas</span>
                   </div>
                   <svg className={`w-4 h-4 transition-transform ${expandedSections['notes'] ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -1210,9 +1308,9 @@ export default function DashboardPage() {
                 </button>
                 {expandedSections['notes'] && (
                   <div className="ml-6 mt-1 space-y-1">
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Character Motivations</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Plot Threads to Resolve</div>
-                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer">Future Arc Concepts</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Character Motivations</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Plot Threads to Resolve</div>
+                    <div className="p-2 text-sm text-gray hover:text-gray-dark cursor-pointer truncate text-left">Future Arc Concepts</div>
                   </div>
                 )}
               </div>
@@ -1240,11 +1338,11 @@ export default function DashboardPage() {
                 onClick={() => toggleSection('entities')}
                 className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark"
               >
-                <div className="flex items-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-2 min-w-0 flex-1">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
-                  <span>Characters</span>
+                  <span className="truncate text-left">Characters</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <span className="text-xs text-gray">{nodes.length}</span>
@@ -1267,14 +1365,14 @@ export default function DashboardPage() {
                           setSelectedNodeId(node.id)
                           setIsEditingDescription(false)
                         }}
-                        className={`flex-1 flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-light transition-colors ${
+                        className={`flex-1 flex items-center space-x-2 p-2 rounded text-sm hover:bg-gray-light transition-colors min-w-0 ${
                           selectedNodeId === node.id ? 'text-gray-dark font-medium' : 'text-gray'
                         }`}
                       >
-                        <svg className={`w-4 h-4 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className={`w-4 h-4 flex-shrink-0 ${node.data.iconColor}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                         </svg>
-                        <span>{node.data.name}</span>
+                        <span className="truncate text-left">{node.data.name}</span>
                       </button>
                       <button
                         onClick={(e) => {
@@ -1294,30 +1392,30 @@ export default function DashboardPage() {
                 </div>
               )}
               <button className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark">
-                <div className="flex items-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-2 min-w-0 flex-1">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                   </svg>
-                  <span>Locations</span>
+                  <span className="truncate text-left">Locations</span>
                 </div>
-                <span className="text-xs text-gray">8</span>
+                <span className="text-xs text-gray flex-shrink-0">8</span>
               </button>
               <button className="w-full flex items-center justify-between p-2 hover:bg-gray-light rounded text-sm text-gray-dark">
-                <div className="flex items-center space-x-2">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center space-x-2 min-w-0 flex-1">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
-                  <span>Timeline</span>
+                  <span className="truncate text-left">Timeline</span>
                 </div>
-                <span className="text-xs text-gray">15</span>
+                <span className="text-xs text-gray flex-shrink-0">15</span>
               </button>
             </div>
           </div>
         </aside>
 
         {/* Central Content Area */}
-        <main className="flex-1 flex flex-col overflow-hidden bg-gray-light">
+        <main className="flex-1 flex flex-col overflow-hidden bg-gray-light" style={{ minWidth: 0 }}>
           {/* Tabs */}
           <div className="bg-white border-b border-gray-200 px-6 py-2">
             <div className="flex space-x-1">
@@ -1366,12 +1464,14 @@ export default function DashboardPage() {
                 // Hover takes precedence over selection
                 const highlightedNodeId = hoveredNodeId || selectedNodeId
                 const isHighlighted = node.id === highlightedNodeId
+                const isHovered = node.id === hoveredNodeId
                 return {
-                  ...node,
-                  data: {
-                    ...node.data,
-                    isFocused: node.id === selectedNodeId,
+                ...node,
+                data: {
+                  ...node.data,
+                  isFocused: node.id === selectedNodeId,
                     isHighlighted,
+                    isHovered,
                   },
                   connectable: true,
                 }
@@ -1379,20 +1479,31 @@ export default function DashboardPage() {
               edges={edges.map(edge => {
                 // Highlight edges connected to the highlighted node (hover takes precedence)
                 const highlightedNodeId = hoveredNodeId || selectedNodeId
-                const isHighlighted = highlightedNodeId && (edge.source === highlightedNodeId || edge.target === highlightedNodeId)
+                const isOutgoing = highlightedNodeId && edge.source === highlightedNodeId
+                const isIncoming = highlightedNodeId && edge.target === highlightedNodeId
+                const isHighlighted = isOutgoing || isIncoming
+                
+                // Different shades of purple for incoming vs outgoing edges
+                let edgeColor = '#5B21B6' // default purple
+                if (isOutgoing) {
+                  edgeColor = '#a855f7' // lighter purple for outgoing
+                } else if (isIncoming) {
+                  edgeColor = '#7c3aed' // darker purple for incoming
+                }
+                
                 return {
                   ...edge,
                   style: isHighlighted 
-                    ? { stroke: '#EC4899', strokeWidth: 3, opacity: 1 }
+                    ? { stroke: edgeColor, strokeWidth: 3, opacity: 1 }
                     : highlightedNodeId
                     ? { stroke: '#5B21B6', strokeWidth: 2, opacity: 0.3 }
                     : { stroke: '#5B21B6', strokeWidth: 2, opacity: 1 },
                   markerEnd: {
                     type: MarkerType.ArrowClosed,
-                    color: isHighlighted ? '#EC4899' : '#5B21B6',
+                    color: isHighlighted ? edgeColor : '#5B21B6',
                   },
                   labelStyle: { 
-                    fill: isHighlighted ? '#EC4899' : '#5B21B6', 
+                    fill: isHighlighted ? edgeColor : '#5B21B6', 
                     fontWeight: isHighlighted ? 600 : 500, 
                     fontSize: 12 
                   },
@@ -1974,7 +2085,18 @@ export default function DashboardPage() {
         </main>
 
         {/* Right Sidebar - Node Details or AI Assistant */}
-        <aside className="w-80 bg-white border-l border-gray-200 flex flex-col overflow-hidden">
+        <aside 
+          className="bg-white border-l border-gray-200 flex flex-col overflow-hidden relative"
+          style={{ width: `${rightSidebarWidth}px`, minWidth: '200px', maxWidth: '600px' }}
+        >
+          {/* Resize Handle */}
+          <div
+            className="absolute left-0 top-0 bottom-0 w-1 cursor-col-resize hover:bg-primary hover:opacity-50 transition-colors z-10"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              setIsResizingRight(true)
+            }}
+          />
           {selectedNodeId ? (() => {
             const selectedNode = nodes.find(n => n.id === selectedNodeId)
             if (!selectedNode) return null
